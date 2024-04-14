@@ -80,7 +80,7 @@ checkpoint chunk_chromosomes:
         if not os.path.exists(hapmap_file):
             logfile.write(
                 f"{tag(rule)} Did not find {hapmap_file}, using default recombination "
-                f"rate of {RECOMBINATION_RATE}")
+                f"rate of {RECOMBINATION_RATE}\n")
             hapmap = msprime.RateMap(
                 position=np.array([0.0, np.max(vcf['variants/POS']) + 1]),
                 rate=np.array([RECOMBINATION_RATE]),
@@ -88,7 +88,7 @@ checkpoint chunk_chromosomes:
         else:
             hapmap = msprime.RateMap.read_hapmap(hapmap_file)
         if not os.path.exists(mask_file):
-            logfile.write(f"{tag(rule)} Did not find {mask_file}, assuming the entire sequence is accessible")
+            logfile.write(f"{tag(rule)} Did not find {mask_file}, assuming the entire sequence is accessible\n")
             bedmask = np.empty((0, 2))
         else:
             bedmask = np.loadtxt(mask_file, usecols=[1, 2]).astype(np.int64)
@@ -101,10 +101,12 @@ checkpoint chunk_chromosomes:
         assert np.max(positions) <= hapmap.sequence_length, "VCF position exceeds hapmap length"
         counts = genotypes.count_alleles()
         retain = np.logical_and(counts.is_segregating(), counts.is_biallelic())
-        logfile.write(
-            f"{tag(rule)} WARNING: {np.sum(bitmask[positions - 1])} sites occur in masked regions, "
-            f"but will be visible to SINGER regardless."
-        )
+        masked_sites = np.sum(bitmask[positions - 1])
+        if masked_sites:
+          logfile.write(
+              f"{tag(rule)} WARNING: {masked_sites} sites occur in masked regions, "
+              f"but will be visible to SINGER regardless\n"
+          )
         retain = np.logical_and(retain, ~bitmask[positions - 1])
         logfile.write(f"{tag(rule)} Calculating statistics with {np.sum(retain)} of {positions.size} variants\n")
         genotypes, positions, counts = genotypes[retain], positions[retain], counts[retain]
