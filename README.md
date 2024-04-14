@@ -1,4 +1,4 @@
-This is a Snakemake workflow for running [SINGER](https://github.com/popgenmethods/SINGER) (MCMC sampling of ancestral recombination graphs) in parallel (e.g. across chunks of sequence). It largely cannabalizes code from the `singer_parallel` script in the main SINGER repo, with some modification to adjust the parameters for each chunk to account for missing data and recombination rate heterogeneity. Some diagonstic plots are produced at the end, that compare summary statistics to their expectations given the ARG topology.
+This is a Snakemake workflow for running [SINGER](https://github.com/popgenmethods/SINGER) (MCMC sampling of ancestral recombination graphs) in parallel (e.g. across chunks of sequence). It largely cannibalizes code from the `singer_parallel` script in the main SINGER repo, with some modification to adjust the parameters for each chunk to account for missing data and recombination rate heterogeneity. Some diagnostic plots are produced at the end, that compare summary statistics to their expectations given the ARG topology.
 
 ### Dependencies
 
