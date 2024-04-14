@@ -40,6 +40,7 @@ MCMC_SAMPLES = int(config["mcmc-samples"])
 MCMC_BURNIN = int(config["mcmc-burnin"])
 POLARISED = bool(config["polarised"])
 RAND_SEED = int(config["random-seed"])
+RECOMBINATION_RATE = float(config["recombination-rate"])
 assert MCMC_SAMPLES > 0, "Number of MCMC samples must be nonzero"
 assert MCMC_BURNIN < MCMC_SAMPLES, "Burn-in exceeds number of MCMC samples"
 np.random.seed(RAND_SEED)
@@ -61,8 +62,6 @@ checkpoint chunk_chromosomes:
     """
     input: 
         vcf = os.path.join(INPUT_DIR, "{chrom}.vcf"),
-        mask = os.path.join(INPUT_DIR, "{chrom}.mask.bed"),
-        hapmap = os.path.join(INPUT_DIR, "{chrom}.hapmap"),
     output:
         site_density = "results/{chrom}/site_density.png",
         chunks = directory("results/{chrom}/chunks"),
@@ -75,17 +74,37 @@ checkpoint chunk_chromosomes:
         np.random.seed(SEED_ARRAY[wildcards.chrom])
         logfile.write(f"{tag(rule)} Random seed {SEED_ARRAY[wildcards.chrom]}\n")
         # read in data, mask, hapmap
-        hapmap = msprime.RateMap.read_hapmap(input.hapmap)
-        bedmask = np.loadtxt(input.mask, usecols=[1, 2]).astype(np.int64)
-        assert np.max(bedmask) <= hapmap.sequence_length, "Mask position exceeds hapmap length"
+        vcf = allel.read_vcf(input.vcf)
+        hapmap_file = input.vcf.replace(".vcf", ".hapmap")
+        mask_file = input.vcf.replace(".vcf", ".mask.bed")
+        if not os.path.exists(hapmap_file):
+            logfile.write(
+                f"{tag(rule)} Did not find {hapmap_file}, using default recombination "
+                f"rate of {RECOMBINATION_RATE}")
+            hapmap = msprime.RateMap(
+                position=np.array([0.0, np.max(vcf['variants/POS']) + 1]),
+                rate=np.array([RECOMBINATION_RATE]),
+            )
+        else:
+            hapmap = msprime.RateMap.read_hapmap(input.hapmap)
+        if not os.path.exists(mask_file):
+            logfile.write(f"{tag(rule)} Did not find {mask_file}, assuming the entire sequence is accessible")
+            bedmask = np.empty((0, 2))
+        else:
+            bedmask = np.loadtxt(input.mask, usecols=[1, 2]).astype(np.int64)
+            assert np.max(bedmask) <= hapmap.sequence_length, "Mask position exceeds hapmap length"
         bitmask = np.full(int(hapmap.sequence_length), False)
         for (a, b) in bedmask: bitmask[a:b] = True
-        vcf = allel.read_vcf(input.vcf)
+        # filter variants to compute stats
         assert not np.all(vcf['calldata/GT'][..., 1] == -1), "VCF must be diploid"
         genotypes, positions = allel.GenotypeArray(vcf['calldata/GT']), vcf['variants/POS']
         assert np.max(positions) <= hapmap.sequence_length, "VCF position exceeds hapmap length"
         counts = genotypes.count_alleles()
         retain = np.logical_and(counts.is_segregating(), counts.is_biallelic())
+        logfile.write(
+            f"{tag(rule)} WARNING: {np.sum(bitmask[positions - 1])} sites occur in masked regions, "
+            f"but will be visible to SINGER regardless."
+        )
         retain = np.logical_and(retain, ~bitmask[positions - 1])
         logfile.write(f"{tag(rule)} Calculating statistics with {np.sum(retain)} of {positions.size} variants\n")
         genotypes, positions, counts = genotypes[retain], positions[retain], counts[retain]
