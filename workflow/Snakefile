@@ -82,7 +82,7 @@ checkpoint chunk_chromosomes:
                 f"{tag(rule)} Did not find {hapmap_file}, using default recombination "
                 f"rate of {RECOMBINATION_RATE}\n")
             hapmap = msprime.RateMap(
-                position=np.array([0.0, np.max(vcf['variants/POS']) + 1]),
+                position=np.array([0.0, np.max(vcf['variants/POS']) + 1.0]),
                 rate=np.array([RECOMBINATION_RATE]),
             )
         else:
@@ -116,7 +116,7 @@ checkpoint chunk_chromosomes:
         lower = np.min(positions) - 1 
         upper = np.max(positions) + 1 
         windows = np.linspace(lower, upper, int((upper - lower) / CHUNK_SIZE) + 1)
-        windows = np.append(np.append(0, windows), hapmap.sequence_length)
+        windows = np.unique(np.append(np.append(0, windows), hapmap.sequence_length))
         diversity, _, num_nonmissing, num_sites = allel.windowed_diversity(
             positions,
             counts,
