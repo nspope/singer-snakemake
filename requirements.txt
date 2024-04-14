@@ -1,0 +1,6 @@
+tskit
+msprime
+scikit-allel
+numpy
+pyyaml
+matplotlib
