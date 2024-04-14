@@ -86,12 +86,12 @@ checkpoint chunk_chromosomes:
                 rate=np.array([RECOMBINATION_RATE]),
             )
         else:
-            hapmap = msprime.RateMap.read_hapmap(input.hapmap)
+            hapmap = msprime.RateMap.read_hapmap(hapmap_file)
         if not os.path.exists(mask_file):
             logfile.write(f"{tag(rule)} Did not find {mask_file}, assuming the entire sequence is accessible")
             bedmask = np.empty((0, 2))
         else:
-            bedmask = np.loadtxt(input.mask, usecols=[1, 2]).astype(np.int64)
+            bedmask = np.loadtxt(mask_file, usecols=[1, 2]).astype(np.int64)
             assert np.max(bedmask) <= hapmap.sequence_length, "Mask position exceeds hapmap length"
         bitmask = np.full(int(hapmap.sequence_length), False)
         for (a, b) in bedmask: bitmask[a:b] = True
