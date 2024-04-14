@@ -1,6 +1,7 @@
 input-dir: "example" # directory with input files per chromosome, that are "chrom.vcf" "chrom.hapmap" "chrom.mask.bed"
 singer-binary: "resources/singer-0.1.8-beta-linux-x86_64/singer" # needed for "-resume" to work correctly
-max-restarts: 10 # maximum number of times to try to resume MCMC on error
+max-resumes: 100 # maximum number of times to try to resume MCMC on error
+max-restarts: 5 # maximum number of times to try restarting SINGER from the top
 chunk-size: 1e6 # target size in base pairs for each singer run
 mutation-rate: 3e-8 # per base mutation rate
 max-missing: 0.975 # ignore chunks with more than this proportion of missing bases

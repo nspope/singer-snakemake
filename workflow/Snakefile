@@ -31,6 +31,7 @@ INPUT_DIR = config["input-dir"]
 CHROMOSOMES = glob_wildcards(os.path.join(INPUT_DIR, "{chrom}.vcf")).chrom
 SINGER_BINARY = config["singer-binary"] 
 MAX_RESTARTS = int(config["max-restarts"])
+MAX_RESUMES = int(config["max-resumes"])
 CHUNK_SIZE = float(config["chunk-size"])
 MUTATION_RATE = float(config["mutation-rate"])
 MAX_MISSING = float(config["max-missing"])
@@ -121,7 +122,7 @@ checkpoint chunk_chromosomes:
         prop_snp[np.isnan(prop_snp)] = 0.0
         filter = np.logical_and(prop_missing < MAX_MISSING, prop_snp > 0.0)
         filter = np.logical_and(filter, rec_rate > 0.0)
-        logfile.write(f"{tag(rule)} Skipping {np.sum(filter)} chunks with too much missing data\n")
+        logfile.write(f"{tag(rule)} Skipping {np.sum(~filter)} (of {filter.size}) chunks with too much missing data\n")
         # plot site density and recombination rate as sanity check
         fig, axs = plt.subplots(3, 1, figsize=(8, 8), sharex=True)
         col = ['black' if x else 'red' for x in filter]
@@ -191,16 +192,20 @@ rule run_singer:
         invocation = [f"{SINGER_BINARY}"]
         for arg, val in params.items():
             invocation += f"-{arg} {val}".split()
-        with open(log.out, "w") as out, open(log.err, "w") as err:
-            print(tag(rule), " ".join(invocation), file=out, flush=True)
-            process = subprocess.run(invocation + ["-seed", str(seed)], check=False, stdout=out, stderr=err)
-        restarts = 0
-        while process.returncode and restarts < MAX_RESTARTS:
+        for attempt in range(MAX_RESTARTS):
+            with open(log.out, "w") as out, open(log.err, "w") as err:
+                print(tag(rule), " ".join(invocation) + f"-seed {seed}", file=out, flush=True)
+                process = subprocess.run(invocation + ["-seed", str(seed)], check=False, stdout=out, stderr=err)
+            resumes = 0
+            while process.returncode and resumes < MAX_RESUMES:
+                seed += 1
+                resumes += 1
+                with open(log.out, "a") as out, open(log.err, "a") as err:
+                    print(f"{tag(rule)} Resume: {resumes}", file=out, flush=True)
+                    process = subprocess.run(invocation + ["-seed", str(seed), "-resume"], check=False, stdout=out, stderr=err)
+            if not process.returncode: 
+                break
             seed += 1
-            restarts += 1
-            with open(log.out, "a") as out, open(log.err, "a") as err:
-                print(f"{tag(rule)} Restart: {restarts}", file=out, flush=True)
-                process = subprocess.run(invocation + ["-seed", str(seed), "-resume"], check=False, stdout=out, stderr=err)
         assert not process.returncode, "SINGER terminated with error"
 
 

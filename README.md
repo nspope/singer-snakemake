@@ -6,23 +6,22 @@ Using `git` and `mamba` and `pip`:
 git clone https://github.com/nspope/singer-snakemake my-singer-run && cd my-singer-run
 mamba install -c bioconda snakemake
 python3 -m pip install -r requirements.txt
-# run with 20 cores
-snakemake -c20 --config configs/example_config.yaml
+snakemake --cores=20 --configfile=configs/example_config.yaml
 ```
 
 ### Inputs
 
 The input files for each chromosome are:
 
-  - _chromosome_name.vcf_ : VCF that can be used as SINGER input (diploid, phased, not compressed)
-  - _chromosome_name.mask.bed_ : (optional) bed file containing inaccessible intervals
-  - _chromosome_name.hapmap_ : (optional) recombination map in the format described in the documentation for `msprime.RateMap.read_hapmap` (see [here](https://tskit.dev/msprime/docs/stable/api.html#msprime.RateMap.read_hapmap))
+  - *chromosome_name.vcf* VCF that can be used as SINGER input (diploid, phased, not compressed)
+  - *chromosome_name.mask.bed* (optional) bed file containing inaccessible intervals
+  - *chromosome_name.hapmap* (optional) recombination map in the format described in the documentation for `msprime.RateMap.read_hapmap` (see [here](https://tskit.dev/msprime/docs/stable/api.html#msprime.RateMap.read_hapmap))
 
 see `example/*`.
 
 ### Config
 
-A template for the configuration file is in `configs/example_config.yaml`, that should be modified for a given run:
+A template for the configuration file is in `configs/example_config.yaml`:
 
 ```
 ...
