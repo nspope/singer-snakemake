@@ -131,7 +131,7 @@ checkpoint chunk_chromosomes:
         )
         folded_afs = allel.sfs_folded(counts, n=2*vcf["samples"].size) / np.sum(~bitmask)
         unfolded_afs = allel.sfs(counts[:, 1], n=2*vcf["samples"].size) / np.sum(~bitmask)
-        Ne = np.floor(0.25 * np.nanmean(diversity) / MUTATION_RATE)
+        Ne = 0.25 * allel.sequence_diversity(positions, counts, is_accessible=~bitmask) / MUTATION_RATE
         logfile.write(f"{tag(rule)} Using ballpark Ne estimate of {Ne}\n")
         # average recombination rate within chunks
         rec_rate = np.diff(hapmap.get_cumulative_mass(windows)) / np.diff(windows)

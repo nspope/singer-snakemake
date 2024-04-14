@@ -2,5 +2,6 @@
 *.swo
 .snakemake/
 snakemake.log
+data/
 results/*
 
