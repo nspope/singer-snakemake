@@ -227,12 +227,14 @@ rule merge_chunks:
     Sets mutations.parent correctly (see https://github.com/popgenmethods/SINGER/issues/11)
     """
     input:
+        ratemap = rules.chunk_chromosomes.output.ratemap, 
         params = merge_chunks_params,
         recombs = lambda w: merge_chunks_input(w, "recombs")
     output:
         trees = "results/{chrom}/{chrom}.{rep}.trees"
     run:
-        tables = tskit.TableCollection(sequence_length=0)
+        ratemap = pickle.load(open(input.ratemap, "rb"))
+        tables = tskit.TableCollection(sequence_length=ratemap.sequence_length)
         nodes, edges = tables.nodes, tables.edges
         num_nodes, num_samples = 0, 0
         files = zip(input.params, input.recombs)
@@ -260,7 +262,6 @@ rule merge_chunks:
             edge_span = np.loadtxt(branch_file)
             edge_span = edge_span[edge_span[:, 2] >= 0, :]
             length = max(edge_span[:, 1])
-            tables.sequence_length = length + block_start
             parent_indices = np.array(edge_span[:, 2], dtype=np.int32)
             child_indices = np.array(edge_span[:, 3], dtype=np.int32)
             parent_indices[parent_indices >= num_samples] += num_nodes

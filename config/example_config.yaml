@@ -5,7 +5,7 @@ chunk-size: 1e6 # target size in base pairs for each singer run
 mutation-rate: 3e-8 # per base mutation rate
 max-missing: 0.975 # ignore chunks with more than this proportion of missing bases
 mcmc-samples: 100 # number of MCMC samples (each sample is a tree sequence)
-mcmc-thin: 100 # thinning interval between MCMC samples
+mcmc-thin: 10 # thinning interval between MCMC samples
 mcmc-burnin: 20 # initial samples discarded when computing plots of statistics
 polarised: True # are variants polarised so that the reference state is ancestral
 random-seed: 1 # random seed
