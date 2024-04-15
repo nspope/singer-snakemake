@@ -208,26 +208,30 @@ rule run_singer:
         out = "results/{chrom}/chunks/{id}.stdout",
         err = "results/{chrom}/chunks/{id}.stderr"
     run:
+        logfile = input.params.replace(".yaml", ".log")
         params = yaml.safe_load(open(input.params))
         seed = params.pop("seed")
         invocation = [f"{SINGER_BINARY}"]
         for arg, val in params.items():
             invocation += f"-{arg} {val}".split()
-        for attempt in range(MAX_RESTARTS):
-            with open(log.out, "w") as out, open(log.err, "w") as err:
-                print(tag(rule), " ".join(invocation) + f"-seed {seed}", file=out, flush=True)
-                process = subprocess.run(invocation + ["-seed", str(seed)], check=False, stdout=out, stderr=err)
-            resumes = 0
-            while process.returncode and resumes < MAX_RESUMES:
-                seed += 1
-                resumes += 1
-                with open(log.out, "a") as out, open(log.err, "a") as err:
-                    print(f"{tag(rule)} Resume: {resumes}", file=out, flush=True)
-                    process = subprocess.run(invocation + ["-seed", str(seed), "-resume"], check=False, stdout=out, stderr=err)
-            if not process.returncode: 
-                break
-            seed += 1
-        assert not process.returncode, "SINGER terminated with error"
+        with open(log.out, "w") as out, open(log.err, "w") as err:
+            for attempt in range(MAX_RESUMES):
+                args = ["-seed", str(seed + attempt)]
+                if os.path.exists(logfile):
+                    contents = open(logfile, "r").readlines()
+                    if len(contents) > 1 and "rethread" in contents[-2]:
+                        # restarting from current iteration sometimes fails,
+                        # so restart from previous iteration instead
+                        handle = open(logfile, "w")
+                        handle.write("".join(contents[:-1]))
+                        handle.close()
+                        args.append("-resume")
+                print(f"{tag(rule)}", " ".join(invocation + args), file=out, flush=True)
+                process = subprocess.run(invocation + args, check=False, stdout=out, stderr=err)
+                if process.returncode == 0: 
+                    break
+            print(f"{tag(rule)} SINGER run ended ({process.returncode})", file=out, flush=True)
+        assert process.returncode == 0, f"SINGER terminated with error ({process.returncode})"
 
 
 def merge_chunks_params(wildcards):
@@ -354,7 +358,7 @@ rule statistics:
         ratemap = rules.chunk_chromosomes.output.ratemap,
         trees = rules.merge_chunks.output.trees
     output:
-        stats = "results/{chrom}/{chrom}.{rep}.stats.p"
+        stats = "results/{chrom}/{chrom}.{rep,[0-9]+}.stats.p"
     run:
         ratemap = pickle.load(open(input.ratemap, "rb"))
         ts = tskit.load(input.trees)

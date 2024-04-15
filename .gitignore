@@ -1,7 +1,7 @@
 *.swp
 *.swo
 .snakemake/
-snakemake.log
+*.log
 data/
 results/*
 
