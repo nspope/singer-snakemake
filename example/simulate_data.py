@@ -61,4 +61,3 @@ with open("example.mask.bed", "w") as maskfile:
         maskfile.write(f"1\t{int(a)}\t{int(b)}\n")
 bedmask_check = np.loadtxt("example.mask.bed", usecols=[1,2])
 np.testing.assert_allclose(bedmask, bedmask_check)
-

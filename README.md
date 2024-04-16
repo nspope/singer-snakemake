@@ -31,11 +31,12 @@ input-dir: "example" # directory with input files per chromosome, that are "chro
 max-resumes: 100 # maximum number of times to try to resume MCMC on error
 max-restarts: 5 # maximum number of times to try restarting SINGER from the top
 chunk-size: 1e6 # target size in base pairs for each singer run
-mutation-rate: 1e-8 # per base mutation rate
+mutation-rate: 1e-8 # per base per generation mutation rate
+recombination-rate: 1e-8 # per base per generation recombination rate, ignored if hapmap is present
 max-missing: 0.975 # ignore chunks with more than this proportion of missing bases
 mcmc-samples: 100 # number of MCMC samples (each sample is a tree sequence)
 mcmc-thin: 10 # thinning interval between MCMC samples
-mcmc-burnin: 20 # initial samples discarded when computing plots of statistics
+mcmc-burnin: 0.2 # proportion of initial samples discarded when computing plots of statistics
 polarised: True # are variants polarised so that the reference state is ancestral
 random-seed: 1 # random seed
 ```
