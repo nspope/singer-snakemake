@@ -30,14 +30,13 @@ def tag(step):
 INPUT_DIR = config["input-dir"]
 CHROMOSOMES = glob_wildcards(os.path.join(INPUT_DIR, "{chrom}.vcf")).chrom
 SINGER_BINARY = config["singer-binary"] 
-MAX_RESTARTS = int(config["max-restarts"])
-MAX_RESUMES = int(config["max-resumes"])
 CHUNK_SIZE = float(config["chunk-size"])
 MUTATION_RATE = float(config["mutation-rate"])
 MAX_MISSING = float(config["max-missing"])
 MCMC_THIN = int(config["mcmc-thin"])
 MCMC_SAMPLES = int(config["mcmc-samples"])
 MCMC_BURNIN = int(float(config["mcmc-burnin"]) * MCMC_SAMPLES)
+MAX_RESUMES = int(config["max-resumes"] * MCMC_SAMPLES)
 POLARISED = bool(config["polarised"])
 RAND_SEED = int(config["random-seed"])
 RECOMBINATION_RATE = float(config["recombination-rate"])
