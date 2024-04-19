@@ -28,8 +28,7 @@ A template for the configuration file is in `configs/example_config.yaml`:
 ```yaml
 # --- example_config.yaml ---
 input-dir: "example" # directory with input files per chromosome, that are "chrom.vcf" "chrom.hapmap" "chrom.mask.bed"
-max-resumes: 100 # maximum number of times to try to resume MCMC on error
-max-restarts: 5 # maximum number of times to try restarting SINGER from the top
+max-resumes: 1000 # maximum number of times to try to resume MCMC on error per iteration
 chunk-size: 1e6 # target size in base pairs for each singer run
 mutation-rate: 1e-8 # per base per generation mutation rate
 recombination-rate: 1e-8 # per base per generation recombination rate, ignored if hapmap is present
