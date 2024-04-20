@@ -18,6 +18,7 @@ The input files for each chromosome are:
   - __chromosome_name.vcf__ VCF that can be used as SINGER input (diploid, phased, not compressed)
   - __chromosome_name.mask.bed__ (optional) bed file containing inaccessible intervals
   - __chromosome_name.hapmap__ (optional) recombination map in the format described in the documentation for `msprime.RateMap.read_hapmap` (see [here](https://tskit.dev/msprime/docs/stable/api.html#msprime.RateMap.read_hapmap))
+  - __chromosome_name.meta.csv__ (optional) csv containing metadata for each sample in the VCF, that will be inserted into the output tree sequences. The first row should be the field names, with subsequent rows for every sample in the VCF.
 
 see `example/*`.
 

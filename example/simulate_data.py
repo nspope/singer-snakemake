@@ -1,11 +1,14 @@
 import msprime
 import numpy as np
+import csv
 import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--seed", default=1, type=int)
 parser.add_argument("--sequence_length", default=10e6, type=float)
 parser.add_argument("--population_size", default=1e4, type=float)
+parser.add_argument("--migration_rate", default=1e-5, type=float)
+parser.add_argument("--num_populations", default=2, type=int)
 parser.add_argument("--mutation_rate", default=1e-8, type=float)
 parser.add_argument("--samples", default=12, type=int)
 args = parser.parse_args()
@@ -17,10 +20,15 @@ recmap_pos = np.linspace(0, args.sequence_length, 1001)
 recmap_rates = np.random.uniform(0, args.mutation_rate * (0.01 + recmap_pos[:-1] / recmap_pos[-1]))
 recmap = msprime.RateMap(position=recmap_pos, rate=recmap_rates)
 
+demo = msprime.Demography.island_model(
+    initial_size=[args.population_size for _ in range(args.num_populations)], 
+    migration_rate=args.migration_rate,
+)
+samples = [msprime.SampleSet(num_samples=args.samples, population=pop.name) for pop in demo.populations]
 ts = msprime.sim_ancestry(
-    samples=args.samples, 
+    samples=samples,
     recombination_rate=recmap, 
-    population_size=args.population_size, 
+    demography=demo,
     random_seed=args.seed
 )
 ts = msprime.sim_mutations(ts, rate=args.mutation_rate, random_seed=args.seed)
@@ -39,7 +47,9 @@ for a, b in bedmask: bitmask[a:b] = True
 
 mask_sites = np.flatnonzero(bitmask[ts.sites_position.astype(np.int64)])
 ts = ts.delete_sites(mask_sites)
-ts.write_vcf(open("example.vcf", "w"), position_transform=lambda x: np.array(x, dtype=np.int64) + 1)
+population_names = np.concatenate([np.repeat(s.population, s.num_samples) for s in samples])
+individual_names = [f"Sample{i:03d}" for i in range(population_names.size)]
+ts.write_vcf(open("example.vcf", "w"), position_transform=lambda x: np.array(x, dtype=np.int64) + 1, individual_names=individual_names)
 
 with open("example.hapmap", "w") as hapmap:
     hapmap.write("Chromosome\tPosition(bp)\tRate(cM/Mb)\tMap(cM)\n")
@@ -61,3 +71,14 @@ with open("example.mask.bed", "w") as maskfile:
         maskfile.write(f"1\t{int(a)}\t{int(b)}\n")
 bedmask_check = np.loadtxt("example.mask.bed", usecols=[1,2])
 np.testing.assert_allclose(bedmask, bedmask_check)
+
+with open("example.meta.csv", "w") as metafile:
+    metafile.write("name,population\n")
+    for samp, pop in zip(individual_names, population_names):
+        metafile.write(f"{samp},\"{pop}\"\n")
+meta_check = csv.reader(open("example.meta.csv", "r"))
+colnames = next(meta_check)
+assert colnames[0] == 'name' and colnames[1] == 'population'
+for i, row in enumerate(meta_check):
+    assert row[0] == individual_names[i]
+    assert row[1] == population_names[i]

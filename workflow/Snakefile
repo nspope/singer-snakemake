@@ -12,6 +12,7 @@ configfile: "config/example_config.yaml"
 __version__ = "0.0.1"
 __name__ = "singer-snakemake"
 
+import csv
 import msprime
 import tskit
 import numpy as np
@@ -66,6 +67,7 @@ checkpoint chunk_chromosomes:
         chunks = directory("results/{chrom}/chunks"),
         vcf_stats = "results/{chrom}/{chrom}.vcf.stats.p",
         ratemap = "results/{chrom}/{chrom}.adjusted_mu.p",
+        metadata = "results/{chrom}/{chrom}.vcf.samples.p",
     log:
         log = "results/{chrom}/{chrom}.log"
     run:
@@ -76,6 +78,7 @@ checkpoint chunk_chromosomes:
         vcf = allel.read_vcf(input.vcf)
         hapmap_file = input.vcf.replace(".vcf", ".hapmap")
         mask_file = input.vcf.replace(".vcf", ".mask.bed")
+        meta_file = input.vcf.replace(".vcf", ".meta.csv")
         if not os.path.exists(hapmap_file):
             logfile.write(
                 f"{tag(rule)} Did not find {hapmap_file}, using default recombination "
@@ -94,6 +97,18 @@ checkpoint chunk_chromosomes:
             assert np.max(bedmask) <= hapmap.sequence_length, "Mask position exceeds hapmap length"
         bitmask = np.full(int(hapmap.sequence_length), False)
         for (a, b) in bedmask: bitmask[a:b] = True
+        # parse metadata
+        if not os.path.exists(meta_file):
+            logfile.write(f"{tag(rule)} Did not find {meta_file}, inserting sample names into metadata\n")
+            metadata = [{"id":name} for name in vcf["samples"]]
+        else:
+            meta_file = csv.reader(open(meta_file, "r"))
+            metadata = []
+            metadata_names = next(meta_file)
+            for row in meta_file:
+                assert len(row) == len(metadata_names)
+                metadata.append({k:v for k, v in zip(metadata_names, row)})
+            assert len(metadata) == vcf["samples"].size, "Must have a metadata row for each sample"
         # filter variants to compute stats
         assert not np.all(vcf['calldata/GT'][..., 1] == -1), "VCF must be diploid"
         genotypes, positions = allel.GenotypeArray(vcf['calldata/GT']), vcf['variants/POS']
@@ -192,6 +207,7 @@ checkpoint chunk_chromosomes:
             "unfolded_afs" : unfolded_afs,
         }
         pickle.dump(vcf_stats, open(output.vcf_stats, "wb"))
+        pickle.dump(metadata, open(output.metadata, "wb"))
 
 
 rule run_singer:
@@ -257,14 +273,18 @@ rule merge_chunks:
     """
     input:
         ratemap = rules.chunk_chromosomes.output.ratemap, 
+        metadata = rules.chunk_chromosomes.output.metadata,
         params = merge_chunks_params,
         recombs = lambda w: merge_chunks_input(w, "recombs")
     output:
         trees = "results/{chrom}/{chrom}.{rep}.trees"
     run:
         ratemap = pickle.load(open(input.ratemap, "rb"))
+        metadata = pickle.load(open(input.metadata, "rb"))
         tables = tskit.TableCollection(sequence_length=ratemap.sequence_length)
-        nodes, edges = tables.nodes, tables.edges
+        nodes, edges, individuals = tables.nodes, tables.edges, tables.individuals
+        individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
+        for x in metadata: individuals.add_row(metadata=x)
         num_nodes, num_samples = 0, 0
         files = zip(input.params, input.recombs)
         for i, (params_file, recomb_file) in enumerate(files):
@@ -280,7 +300,7 @@ rule merge_chunks:
             for t in node_time:
                 if t == 0:
                     if i == 0:
-                        nodes.add_row(flags=tskit.NODE_IS_SAMPLE)
+                        nodes.add_row(flags=tskit.NODE_IS_SAMPLE, individual=num_samples // 2)
                         num_samples += 1
                 else:
                     #assert t >= min_time #gets hit by FP error? TODO
