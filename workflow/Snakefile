@@ -1,10 +1,8 @@
 """
-Snakemake workflow for SINGER (github.com/popgenmethods/SINGER). The code below
-largely cannibalizes the `singer_parallel` wrapper included with SINGER (by Yun
-Deng). The exception is that mutation rate is adjusted on the basis of
-accessible sequence per chunk (from a bed file of missing intervals), and an
-average recombination rate per chunk is calculated (from a provided
-recombination map. Some diagnostic plots are produced at the end.
+Snakemake workflow for SINGER (github.com/popgenmethods/SINGER). Please cite
+SINGER if you use this (note that I'm not an author of SINGER).
+
+Part of https://github.com/nspope/singer-snakemake.
 """
 
 configfile: "config/example_config.yaml"
@@ -21,6 +19,7 @@ import matplotlib.pyplot as plt
 import yaml
 import pickle
 import subprocess
+import numba
 from datetime import datetime
 
 def tag(step): 
@@ -30,17 +29,19 @@ def tag(step):
 
 INPUT_DIR = config["input-dir"]
 CHROMOSOMES = glob_wildcards(os.path.join(INPUT_DIR, "{chrom}.vcf")).chrom
-SINGER_BINARY = config["singer-binary"] 
 CHUNK_SIZE = float(config["chunk-size"])
-MUTATION_RATE = float(config["mutation-rate"])
 MAX_MISSING = float(config["max-missing"])
+POLARISED = bool(config["polarised"])
+MUTATION_RATE = float(config["mutation-rate"])
+RECOMBINATION_RATE = float(config["recombination-rate"])
 MCMC_THIN = int(config["mcmc-thin"])
 MCMC_SAMPLES = int(config["mcmc-samples"])
 MCMC_BURNIN = int(float(config["mcmc-burnin"]) * MCMC_SAMPLES)
-MAX_RESUMES = int(config["max-resumes"] * MCMC_SAMPLES)
-POLARISED = bool(config["polarised"])
+MCMC_RESUMES = int(config["mcmc-resumes"] * MCMC_SAMPLES)
 RAND_SEED = int(config["random-seed"])
-RECOMBINATION_RATE = float(config["recombination-rate"])
+COALRATE_INTERVALS = int(config["coalrate-intervals"])
+SINGER_BINARY = config["singer-binary"] 
+
 assert MCMC_SAMPLES > 0, "Number of MCMC samples must be nonzero"
 assert MCMC_BURNIN < MCMC_SAMPLES, "Burn-in exceeds number of MCMC samples"
 np.random.seed(RAND_SEED)
@@ -53,6 +54,7 @@ rule all:
         expand("results/{chrom}/site_density.png", chrom=CHROMOSOMES),
         expand("results/{chrom}/diversity-scatter.png", chrom=CHROMOSOMES),
         expand("results/{chrom}/{chrom}.{rep}.trees", chrom=CHROMOSOMES, rep=range(MCMC_SAMPLES)),
+        expand("results/{chrom}/pair-coalescence-rates.png", chrom=CHROMOSOMES),
 
 
 checkpoint chunk_chromosomes:
@@ -230,7 +232,7 @@ rule run_singer:
         for arg, val in params.items():
             invocation += f"-{arg} {val}".split()
         with open(log.out, "w") as out, open(log.err, "w") as err:
-            for attempt in range(MAX_RESUMES):
+            for attempt in range(MCMC_RESUMES):
                 args = ["-seed", str(seed + attempt)]
                 if os.path.exists(logfile):
                     contents = open(logfile, "r").readlines()
@@ -371,7 +373,11 @@ rule merge_chunks:
 
 rule statistics:
     """
-    Calculate per-chunk statistics across MCMC iterations.
+    Calculate per-chunk branch statistics ("fitted values") across MCMC iterations:
+    - branch diversity
+    - branch Tajima's D
+    - branch site frequency spectra
+    - coalescence rates
     """
     input:
         ratemap = rules.chunk_chromosomes.output.ratemap,
@@ -393,7 +399,7 @@ rule statistics:
             "diversity" : diversity, 
             "tajima_d" : tajima_d, 
             "folded_afs" : folded_afs, 
-            "unfolded_afs" : unfolded_afs 
+            "unfolded_afs" : unfolded_afs,
         }
         pickle.dump(stats, open(output.stats, "wb"))
 
@@ -410,12 +416,11 @@ def diagnostics_input(wildcards):
 rule diagnostics:
     """
     Make some diagnostic plots per chromosome:
-      
-    - Per-base site diversity (from VCF) vs branch diversity ("fitted values" from trees) across chunks.
-    - Branch diversity (average over chunks) over MCMC iterations.
-    - Per-base site and branch diversity over genome position.
-    - The above, but with Tajima's D instead of nucleotide diversity
-    - Site allele frequency spectrum vs branch allele frequency spectrum (folded and unfolded).
+    - per-base site diversity (from VCF) vs branch diversity ("fitted values" from trees) across chunks
+    - branch diversity (average over chunks) over MCMC iterations
+    - per-base site and branch diversity over genome position
+    - the above, but with Tajima's D instead of nucleotide diversity
+    - site allele frequency spectrum vs branch allele frequency spectrum (folded and unfolded)
     """
     input:
         ratemap = rules.chunk_chromosomes.output.ratemap,
@@ -449,7 +454,6 @@ rule diagnostics:
             branch_tajima_d[:, i] = stats['tajima_d']
             branch_folded_afs[:, i] = stats['folded_afs'][:site_folded_afs.size]
             branch_unfolded_afs[:, i] = stats['unfolded_afs'][:site_unfolded_afs.size]
-        # TODO: factorise below
         trace_diversity = np.nanmean(branch_diversity, axis=0)
         trace_tajima_d = np.nanmean(branch_tajima_d, axis=0)
         mean_diversity = np.nanmean(branch_diversity[:, MCMC_BURNIN:], axis=1)
@@ -515,4 +519,59 @@ rule diagnostics:
         plt.clf()
 
 
-# ------ lib ------ #
+rule coalescence_rates:
+    """
+    Calculate pair/cross coalescence rates across MCMC iterations:
+
+    - per-chromosome pair coalescence rate, all samples
+    - per-chunk pair coalescence rate, all samples
+    - per-chromosome cross-coalescence rate, within/between populations (optional)
+    - per-chunk cross-coalescence rate, within/between populations (optional)
+
+    Rates are calculated within equally-spaced quantiles of the empirical
+    distribution of coalescence times, separately for each window (e.g. the
+    epoch breaks will vary across windows).
+    """
+    input:
+        ratemap = rules.chunk_chromosomes.output.ratemap,
+        trees = rules.merge_chunks.output.trees
+    output:
+        coalrate = "results/{chrom}/{chrom}.{rep,[0-9]+}.coalrate.p"
+    params:
+        script = "workflow/scripts/coalescence_rates.py"
+    shell:
+        """
+        python3 {params.script} \
+            --tree-sequence {input.trees} \
+            --output-path {output.coalrate} \
+            --num-time-intervals {COALRATE_INTERVALS}
+        """
+
+
+def plot_coalescence_rates_input(wildcards):
+    dir = f"results/{wildcards.chrom}"
+    out = expand(
+        os.path.join(dir, "{chrom}.{rep}.coalrate.p"),
+        chrom=wildcards.chrom,
+        rep=range(MCMC_SAMPLES),
+    )
+    return out
+
+rule plot_coalescence_rates:
+    """
+    Plot pair/cross coalescence rates within equally spaced quantiles of the
+    empirical coalescence time distribution.
+    """
+    input:
+        ratemap = rules.chunk_chromosomes.output.ratemap,
+        coalrate = plot_coalescence_rates_input,
+    output:
+        pair_coalescence_rates = "results/{chrom}/pair-coalescence-rates.png",
+    params:
+        script = "workflow/scripts/plot_coalescence_rates.py"
+    shell:
+        """
+        python3 {params.script} \
+            --coalescence-rates {input.coalrate} \
+            --pair-coalescence-rates-plot {output.pair_coalescence_rates} 
+        """
