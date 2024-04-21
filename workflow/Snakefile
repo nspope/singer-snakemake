@@ -40,6 +40,7 @@ MCMC_BURNIN = int(float(config["mcmc-burnin"]) * MCMC_SAMPLES)
 MCMC_RESUMES = int(config["mcmc-resumes"] * MCMC_SAMPLES)
 RAND_SEED = int(config["random-seed"])
 COALRATE_EPOCHS = int(config["coalrate-epochs"])
+STRATIFY_BY = config["stratify-by"]
 SINGER_BINARY = config["singer-binary"] 
 
 assert MCMC_SAMPLES > 0, "Number of MCMC samples must be nonzero"
@@ -214,8 +215,8 @@ checkpoint chunk_chromosomes:
 
 rule run_singer:
     """
-    Run SINGER chunk-by-chunk. Adapted from `singer_master`. 
-    Uses the "-resume" flag to resume sampling on error (see https://github.com/popgenmethods/SINGER/issues/13)
+    Run SINGER chunk-by-chunk. Uses the "-resume" flag to resume sampling on
+    error (see https://github.com/popgenmethods/SINGER/issues/13)
     """
     input:
         params = "results/{chrom}/chunks/{id}.yaml"
@@ -374,6 +375,7 @@ rule merge_chunks:
 rule statistics:
     """
     Calculate per-chunk branch statistics ("fitted values") across MCMC iterations:
+
     - branch diversity
     - branch Tajima's D
     - branch site frequency spectra
@@ -416,6 +418,7 @@ def diagnostics_input(wildcards):
 rule diagnostics:
     """
     Make some diagnostic plots per chromosome:
+
     - per-base site diversity (from VCF) vs branch diversity ("fitted values" from trees) across chunks
     - branch diversity (average over chunks) over MCMC iterations
     - per-base site and branch diversity over genome position
@@ -435,88 +438,12 @@ rule diagnostics:
         tajima_d_skyline = "results/{chrom}/tajima-d-skyline.png",
         folded_afs = "results/{chrom}/folded-afs.png",
         unfolded_afs = "results/{chrom}/unfolded-afs.png",
-    run:
-        ratemap = pickle.load(open(input.ratemap, "rb"))
-        windows = ratemap.position
-        vcf_stats = pickle.load(open(input.vcf_stats, "rb"))
-        site_diversity = vcf_stats['diversity']
-        site_tajima_d = vcf_stats['tajima_d']
-        site_folded_afs = vcf_stats['folded_afs']
-        site_unfolded_afs = vcf_stats['unfolded_afs']
-        # aggregate MCMC
-        branch_diversity = np.zeros((windows.size - 1, MCMC_SAMPLES))
-        branch_tajima_d = np.zeros((windows.size - 1, MCMC_SAMPLES))
-        branch_folded_afs = np.zeros((site_folded_afs.size, MCMC_SAMPLES))
-        branch_unfolded_afs = np.zeros((site_unfolded_afs.size, MCMC_SAMPLES))
-        for i, stats_file in enumerate(input.stats):
-            stats = pickle.load(open(stats_file, "rb"))
-            branch_diversity[:, i] = stats['diversity']
-            branch_tajima_d[:, i] = stats['tajima_d']
-            branch_folded_afs[:, i] = stats['folded_afs'][:site_folded_afs.size]
-            branch_unfolded_afs[:, i] = stats['unfolded_afs'][:site_unfolded_afs.size]
-        trace_diversity = np.nanmean(branch_diversity, axis=0)
-        trace_tajima_d = np.nanmean(branch_tajima_d, axis=0)
-        mean_diversity = np.nanmean(branch_diversity[:, MCMC_BURNIN:], axis=1)
-        mean_tajima_d = np.nanmean(branch_tajima_d[:, MCMC_BURNIN:], axis=1)
-        mean_folded_afs = np.mean(branch_folded_afs[:, MCMC_BURNIN:], axis=1)
-        mean_unfolded_afs = np.mean(branch_unfolded_afs[:, MCMC_BURNIN:], axis=1)
-        # scatterplots
-        plt.scatter(site_diversity, mean_diversity, c='firebrick', s=8)
-        plt.axline((np.nanmean(site_diversity), np.nanmean(site_diversity)), slope=1, color='black')
-        plt.xlabel("Site (VCF) diversity per block")
-        plt.ylabel("E[diversity] per block")
-        plt.savefig(output.diversity_scatter)
-        plt.clf()
-        plt.scatter(site_tajima_d, mean_tajima_d, c='firebrick', s=8)
-        plt.axline((np.nanmean(site_tajima_d), np.nanmean(site_tajima_d)), slope=1, color='black')
-        plt.xlabel("Site (VCF) Tajima's D per block")
-        plt.ylabel("E[Tajima's D] per block")
-        plt.savefig(output.tajima_d_scatter)
-        plt.clf()
-        # trace
-        plt.plot(np.arange(trace_diversity.size), trace_diversity, "-", c='firebrick')
-        plt.xlabel("MCMC iteration")
-        plt.ylabel("E[diversity]")
-        plt.savefig(output.diversity_trace)
-        plt.clf()
-        plt.plot(np.arange(trace_tajima_d.size), trace_tajima_d, "-", c='firebrick')
-        plt.xlabel("MCMC iteration")
-        plt.ylabel("E[Tajima's D]")
-        plt.savefig(output.tajima_d_trace)
-        plt.clf()
-        # skyline
-        coord = windows[:-1] / 2 + windows[1:] / 2 
-        plt.plot(coord, mean_diversity, "-", c='firebrick', label='branch-ARG')
-        plt.plot(coord, site_diversity, "-", c='black', label='site-VCF')
-        plt.xlabel("Position on chromosome")
-        plt.ylabel("Diversity")
-        plt.legend()
-        plt.savefig(output.diversity_skyline)
-        plt.clf()
-        plt.plot(coord, mean_tajima_d, "-", c='firebrick', label='branch-ARG')
-        plt.plot(coord, site_tajima_d, "-", c='black', label='site-VCF')
-        plt.xlabel("Position on chromosome")
-        plt.ylabel("Tajima's D")
-        plt.legend()
-        plt.savefig(output.tajima_d_skyline)
-        plt.clf()
-        # afs
-        plt.scatter(np.arange(site_folded_afs.size), site_folded_afs, c='black', label='site-VCF', s=8)
-        plt.scatter(np.arange(site_folded_afs.size), mean_folded_afs, c='firebrick', label='branch-ARG', s=8)
-        plt.xlabel("Minor allele frequency")
-        plt.ylabel("# of variants / base")
-        plt.yscale("log")
-        plt.legend()
-        plt.savefig(output.folded_afs)
-        plt.clf()
-        plt.scatter(np.arange(site_unfolded_afs.size), site_unfolded_afs, c='black', label='site-VCF', s=8)
-        plt.scatter(np.arange(site_unfolded_afs.size), mean_unfolded_afs, c='firebrick', label='branch-ARG', s=8)
-        plt.xlabel("Derive allele frequency")
-        plt.ylabel("# of variants / base")
-        plt.yscale("log")
-        plt.legend()
-        plt.savefig(output.unfolded_afs)
-        plt.clf()
+    params:
+        mcmc_samples = MCMC_SAMPLES,
+        mcmc_burnin = MCMC_BURNIN,
+        confidence_level = 0.0,
+    script:
+        "scripts/diagnostics.py"
 
 
 rule coalescence_rates:
