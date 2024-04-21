@@ -42,7 +42,7 @@ for i, f in enumerate(snakemake.input.coalrate):
     inp = pickle.load(open(f, "rb"))
     rates[:, i] = np.squeeze(inp['rates'])
     breaks[:, i] = np.squeeze(inp['breaks'])
-    plt.step(breaks[:, i], rates[:, i], color='black', alpha=0.1)
+    plt.step(breaks[:, i], rates[:, i], color='gray', alpha=0.1)
 mean_rates, mean_breaks = average_coalescence_rates(rates, breaks, quantiles)
 plt.step(mean_breaks, mean_rates, color='black', linewidth=2)
 plt.xlabel("Generations in past")
