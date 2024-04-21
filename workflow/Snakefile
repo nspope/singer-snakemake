@@ -5,11 +5,6 @@ SINGER if you use this (note that I'm not an author of SINGER).
 Part of https://github.com/nspope/singer-snakemake.
 """
 
-configfile: "config/example_config.yaml"
-
-__version__ = "0.0.1"
-__name__ = "singer-snakemake"
-
 import csv
 import msprime
 import tskit
@@ -23,9 +18,11 @@ import numba
 from datetime import datetime
 
 def tag(step): 
-    return f"[{__name__}::{step}::{str(datetime.now())}]"
+    return f"[singer-snakemake::{step}::{str(datetime.now())}]"
 
 # ------ config ------ #
+
+configfile: "config/example_config.yaml"
 
 INPUT_DIR = config["input-dir"]
 CHROMOSOMES = glob_wildcards(os.path.join(INPUT_DIR, "{chrom}.vcf")).chrom
@@ -73,144 +70,16 @@ checkpoint chunk_chromosomes:
         metadata = "results/{chrom}/{chrom}.vcf.samples.p",
     log:
         log = "results/{chrom}/{chrom}.log"
-    run:
-        logfile = open(log.log, "w")
-        np.random.seed(SEED_ARRAY[wildcards.chrom])
-        logfile.write(f"{tag(rule)} Random seed {SEED_ARRAY[wildcards.chrom]}\n")
-        # read in data, mask, hapmap
-        vcf = allel.read_vcf(input.vcf)
-        hapmap_file = input.vcf.replace(".vcf", ".hapmap")
-        mask_file = input.vcf.replace(".vcf", ".mask.bed")
-        meta_file = input.vcf.replace(".vcf", ".meta.csv")
-        if not os.path.exists(hapmap_file):
-            logfile.write(
-                f"{tag(rule)} Did not find {hapmap_file}, using default recombination "
-                f"rate of {RECOMBINATION_RATE}\n")
-            hapmap = msprime.RateMap(
-                position=np.array([0.0, np.max(vcf['variants/POS']) + 1.0]),
-                rate=np.array([RECOMBINATION_RATE]),
-            )
-        else:
-            hapmap = msprime.RateMap.read_hapmap(hapmap_file)
-        if not os.path.exists(mask_file):
-            logfile.write(f"{tag(rule)} Did not find {mask_file}, assuming the entire sequence is accessible\n")
-            bedmask = np.empty((0, 2))
-        else:
-            bedmask = np.loadtxt(mask_file, usecols=[1, 2]).astype(np.int64)
-            assert np.max(bedmask) <= hapmap.sequence_length, "Mask position exceeds hapmap length"
-        bitmask = np.full(int(hapmap.sequence_length), False)
-        for (a, b) in bedmask: bitmask[a:b] = True
-        # parse metadata
-        if not os.path.exists(meta_file):
-            logfile.write(f"{tag(rule)} Did not find {meta_file}, inserting sample names into metadata\n")
-            metadata = [{"id":name} for name in vcf["samples"]]
-        else:
-            meta_file = csv.reader(open(meta_file, "r"))
-            metadata = []
-            metadata_names = next(meta_file)
-            for row in meta_file:
-                assert len(row) == len(metadata_names)
-                metadata.append({k:v for k, v in zip(metadata_names, row)})
-            assert len(metadata) == vcf["samples"].size, "Must have a metadata row for each sample"
-        # filter variants to compute stats
-        assert not np.all(vcf['calldata/GT'][..., 1] == -1), "VCF must be diploid"
-        genotypes, positions = allel.GenotypeArray(vcf['calldata/GT']), vcf['variants/POS']
-        assert np.max(positions) <= hapmap.sequence_length, "VCF position exceeds hapmap length"
-        counts = genotypes.count_alleles()
-        retain = np.logical_and(counts.is_segregating(), counts.is_biallelic())
-        masked_sites = np.sum(bitmask[positions - 1])
-        if masked_sites:
-          logfile.write(
-              f"{tag(rule)} WARNING: {masked_sites} sites occur in masked regions, "
-              f"but will be visible to SINGER regardless\n"
-          )
-        retain = np.logical_and(retain, ~bitmask[positions - 1])
-        logfile.write(f"{tag(rule)} Calculating statistics with {np.sum(retain)} of {positions.size} variants\n")
-        genotypes, positions, counts = genotypes[retain], positions[retain], counts[retain]
-        counts[:, 1] = np.sum(counts[:, 1:], axis=1)
-        counts = counts[:, :2]
-        # divvy chromosome into chunks and compute summary stats per chunk
-        lower = np.min(positions) - 1 
-        upper = np.max(positions) + 1 
-        windows = np.linspace(lower, upper, int((upper - lower) / CHUNK_SIZE) + 1)
-        windows = np.unique(np.append(np.append(0, windows), hapmap.sequence_length))
-        diversity, _, num_nonmissing, num_sites = allel.windowed_diversity(
-            positions,
-            counts,
-            windows=np.column_stack([windows[:-1] + 1, windows[1:]]).astype(np.int64),
-            is_accessible=~bitmask,
-            fill=0.0,
-        )
-        tajima_d, *_ = allel.windowed_tajima_d(
-            positions,
-            counts,
-            windows=np.column_stack([windows[:-1] + 1, windows[1:]]).astype(np.int64),
-        )
-        folded_afs = allel.sfs_folded(counts, n=2*vcf["samples"].size) / np.sum(~bitmask)
-        unfolded_afs = allel.sfs(counts[:, 1], n=2*vcf["samples"].size) / np.sum(~bitmask)
-        Ne = 0.25 * allel.sequence_diversity(positions, counts, is_accessible=~bitmask) / MUTATION_RATE
-        logfile.write(f"{tag(rule)} Using ballpark Ne estimate of {Ne}\n")
-        # average recombination rate within chunks
-        rec_rate = np.diff(hapmap.get_cumulative_mass(windows)) / np.diff(windows)
-        # filter chunks with too much missingness or zero recombination rate
-        num_total = np.diff(windows)
-        num_missing = num_total - num_nonmissing
-        prop_missing = num_missing / num_total
-        prop_snp = num_sites / num_nonmissing
-        prop_snp[np.isnan(prop_snp)] = 0.0
-        filter = np.logical_and(prop_missing < MAX_MISSING, prop_snp > 0.0)
-        filter = np.logical_and(filter, rec_rate > 0.0)
-        logfile.write(f"{tag(rule)} Skipping {np.sum(~filter)} (of {filter.size}) chunks with too much missing data\n")
-        # plot site density and recombination rate as sanity check
-        fig, axs = plt.subplots(3, 1, figsize=(8, 8), sharex=True)
-        col = ['black' if x else 'red' for x in filter]
-        axs[0].scatter(windows[:-1], prop_missing, s=4, c=col)
-        axs[0].set_ylabel("Proportion missing bases")
-        axs[1].scatter(windows[:-1], prop_snp, s=4, c=col)
-        axs[1].set_ylabel("Proportion variant bases")
-        axs[2].scatter(windows[:-1], rec_rate, s=4, c=col)
-        axs[2].set_ylabel("Recombination rate")
-        axs[2].set_yscale("log")
-        fig.supxlabel("Position")
-        fig.tight_layout()
-        plt.savefig(output.site_density)
-        plt.clf()
-        # adjust mutation rate to account for missing data in each chunk
-        os.makedirs(f"{output.chunks}")
-        seeds = np.random.randint(0, 2**10, size=filter.size)
-        vcf_prefix = input.vcf.removesuffix(".vcf")
-        adj_mu = np.zeros(windows.size - 1)
-        for i in np.flatnonzero(filter):
-            start, end = windows[i], windows[i + 1]
-            adj_mu[i] = (1 - prop_missing[i]) * MUTATION_RATE
-            polar = 0.99 if POLARISED else 0.5
-            id = f"{i:>06}"
-            chunk_params = {
-                "thin" : int(MCMC_THIN), "n" : int(MCMC_SAMPLES),
-                "Ne" : float(Ne), "m" : float(adj_mu[i]), "input" : str(vcf_prefix), 
-                "start" : int(start), "end" : int(end), "polar" : float(polar),
-                "r" : float(rec_rate[i]), "seed" : int(seeds[i]),
-                "output" : str(f"{output.chunks}/{id}")
-            }
-            chunk_path = f"{output.chunks}/{id}.yaml"
-            yaml.dump(chunk_params, open(chunk_path, "w"), default_flow_style=False)
-        # dump adjusted mutation rates and chunk coordinates
-        ratemap = msprime.RateMap(
-            position=windows, 
-            rate=np.array(adj_mu),
-        )
-        pickle.dump(ratemap, open(output.ratemap, "wb"))
-        # dump statistics
-        diversity[~filter] = np.nan
-        tajima_d[~filter] = np.nan
-        vcf_stats = {
-            "diversity" : diversity, 
-            "tajima_d" : tajima_d, 
-            "folded_afs" : folded_afs, 
-            "unfolded_afs" : unfolded_afs,
-        }
-        pickle.dump(vcf_stats, open(output.vcf_stats, "wb"))
-        pickle.dump(metadata, open(output.metadata, "wb"))
+    params:
+        seed = lambda w: SEED_ARRAY[w.chrom],
+        chunk_size = CHUNK_SIZE,
+        mutation_rate = MUTATION_RATE,
+        mcmc_samples = MCMC_SAMPLES,
+        mcmc_thin = MCMC_THIN,
+        polarised = POLARISED,
+        max_missing = MAX_MISSING,
+    script:
+        "scripts/chunk_chromosomes.py"
 
 
 rule run_singer:
@@ -225,31 +94,11 @@ rule run_singer:
     log:
         out = "results/{chrom}/chunks/{id}.stdout",
         err = "results/{chrom}/chunks/{id}.stderr"
-    run:
-        logfile = input.params.replace(".yaml", ".log")
-        params = yaml.safe_load(open(input.params))
-        seed = params.pop("seed")
-        invocation = [f"{SINGER_BINARY}"]
-        for arg, val in params.items():
-            invocation += f"-{arg} {val}".split()
-        with open(log.out, "w") as out, open(log.err, "w") as err:
-            for attempt in range(MCMC_RESUMES):
-                args = ["-seed", str(seed + attempt)]
-                if os.path.exists(logfile):
-                    contents = open(logfile, "r").readlines()
-                    if len(contents) > 1 and "rethread" in contents[-2]:
-                        # restarting from current iteration sometimes fails,
-                        # so restart from previous iteration instead
-                        handle = open(logfile, "w")
-                        handle.write("".join(contents[:-1]))
-                        handle.close()
-                        args.append("-resume")
-                print(f"{tag(rule)}", " ".join(invocation + args), file=out, flush=True)
-                process = subprocess.run(invocation + args, check=False, stdout=out, stderr=err)
-                if process.returncode == 0: 
-                    break
-            print(f"{tag(rule)} SINGER run ended ({process.returncode})", file=out, flush=True)
-        assert process.returncode == 0, f"SINGER terminated with error ({process.returncode})"
+    params:
+        mcmc_resumes = MCMC_RESUMES,
+        singer_binary = SINGER_BINARY,
+    script:
+        "scripts/run_singer.py"
 
 
 def merge_chunks_params(wildcards):
@@ -306,7 +155,8 @@ rule merge_chunks:
                         nodes.add_row(flags=tskit.NODE_IS_SAMPLE, individual=num_samples // 2)
                         num_samples += 1
                 else:
-                    #assert t >= min_time #gets hit by FP error? TODO
+                    #TODO: assertion triggers rarely (FP error?)
+                    #assert t >= min_time 
                     t = max(min_time + 1e-7, t)
                     nodes.add_row(time=t)
                     min_time = t

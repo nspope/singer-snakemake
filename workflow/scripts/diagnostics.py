@@ -9,6 +9,12 @@ import pickle
 import matplotlib.pyplot as plt
 import numpy as np
 import msprime
+from datetime import datetime
+
+# --- lib --- #
+
+def tag(): 
+    return f"[singer-snakemake::{snakemake.rule}::{str(datetime.now())}]"
 
 # --- implm --- #
 

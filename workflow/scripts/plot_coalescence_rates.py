@@ -11,8 +11,12 @@ import msprime
 import numpy as np
 import matplotlib.pyplot as plt
 import tskit
+from datetime import datetime
 
 # --- lib --- #
+
+def tag(): 
+    return f"[singer-snakemake::{snakemake.rule}::{str(datetime.now())}]"
 
 def average_coalescence_rates(rates, breaks, quantiles):
     """

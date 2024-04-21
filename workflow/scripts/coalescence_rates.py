@@ -11,9 +11,13 @@ import numba
 import msprime
 import numpy as np
 import tskit
-import argparse
+from datetime import datetime
 
 # --- lib --- #
+
+def tag(): 
+    return f"[singer-snakemake::{snakemake.rule}::{str(datetime.now())}]"
+
 
 @numba.njit("f8[:, :, :](i4[:, :], f8[:], f8[:, :], i4[:], i4[:], f8[:], f8[:], i4[:], i4[:], f8)")
 def _pair_coalescence_counts(
