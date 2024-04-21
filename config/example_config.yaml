@@ -9,6 +9,6 @@ mcmc-samples: 10 # number of MCMC samples (each sample is a tree sequence)
 mcmc-thin: 10 # thinning interval between MCMC samples
 mcmc-burnin: 0.2 # proportion of initial samples discarded when computing plots of statistics
 mcmc-resumes: 1000 # maximum number of times to try to resume MCMC on error at a given iteration
-coalrate-intervals: 25 # number of time intervals to calculate coalescence rates within
+coalrate-epochs: 25 # number of time intervals within which to calculate coalescence rates
 random-seed: 1 # random seed
 singer-binary: "resources/singer-0.1.8-beta-linux-x86_64/singer" # TODO: automatically fetch from SINGER repo; this version is needed for -resume flag

@@ -210,9 +210,10 @@ def pair_coalescence_rates(ts, sample_sets, indexes, windows, num_time_bins=50):
     return coalrate, epochs
 
 
-# --- implm --- #
-
-def simulate_test_data(seed, popsize):
+def simulation_test(seed, popsize, num_epochs):
+    """
+    For debugging, not run
+    """
     return msprime.sim_ancestry(
         samples=100, 
         recombination_rate=1e-8, 
@@ -220,33 +221,24 @@ def simulate_test_data(seed, popsize):
         population_size=popsize, 
         random_seed=seed,
     )
+    sample_sets = [list(ts.samples())]
+    indexes = [(0, 0)]
+    windows = np.linspace(0.0, ts.sequence_length, 2)
+    est = np.squeeze(pair_coalescence_rates(ts, sample_sets, indexes, windows, num_epochs))
+    print("Target coalesence rate:", 0.5 / popsize)
+    print("Estimated coalesence rate in intervals:", est)
+    print("Relative error:", (est - 0.5 / popsize) * popsize / 2)
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--tree-sequence", default=None, type=str)
-    parser.add_argument("--output-path", default=None, type=str)
-    parser.add_argument("--num-time-intervals", default=10, type=int)
-    parser.add_argument("--test-seed", default=1024, type=int)
-    parser.add_argument("--test-size", default=1e4, type=float)
-    args = parser.parse_args()
 
-    if args.tree_sequence is None:
-        ts = simulate_test_data(args.test_seed, args.test_size)
-        sample_sets = [list(ts.samples())]
-        indexes = [(0, 0)]
-        windows = np.linspace(0.0, ts.sequence_length, 2)
-        est = np.squeeze(pair_coalescence_rates(ts, sample_sets, indexes, windows, args.num_time_intervals))
-        print("Target coalesence rate:", 0.5 / args.test_size)
-        print("Estimated coalesence rate in intervals:", est)
-        print("Relative error:", (est - 0.5 / args.test_size) * args.test_size / 2)
-    else:
-        ts = tskit.load(args.tree_sequence)
-        sample_sets = [list(ts.samples())]
-        indexes = [(0, 0)]
-        windows = np.linspace(0.0, ts.sequence_length, 2)
-        rates, breaks = pair_coalescence_rates(ts, sample_sets, indexes, windows, args.num_time_intervals)
-        if args.output_path is not None:
-            output = {"rates" : rates, "breaks" : breaks}
-            pickle.dump(output, open(args.output_path, "wb"))
+# --- implm --- #
 
-    sys.exit(0)
+num_intervals = snakemake.params.coalrate_epochs
+ts = tskit.load(snakemake.input.trees)
+
+# global pair coalescence rates
+sample_sets = [list(ts.samples())]
+indexes = [(0, 0)]
+windows = np.linspace(0.0, ts.sequence_length, 2)
+rates, breaks = pair_coalescence_rates(ts, sample_sets, indexes, windows, num_intervals)
+output = {"rates" : rates, "breaks" : breaks}
+pickle.dump(output, open(snakemake.output.coalrate, "wb"))

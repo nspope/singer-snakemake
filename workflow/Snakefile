@@ -39,7 +39,7 @@ MCMC_SAMPLES = int(config["mcmc-samples"])
 MCMC_BURNIN = int(float(config["mcmc-burnin"]) * MCMC_SAMPLES)
 MCMC_RESUMES = int(config["mcmc-resumes"] * MCMC_SAMPLES)
 RAND_SEED = int(config["random-seed"])
-COALRATE_INTERVALS = int(config["coalrate-intervals"])
+COALRATE_EPOCHS = int(config["coalrate-epochs"])
 SINGER_BINARY = config["singer-binary"] 
 
 assert MCMC_SAMPLES > 0, "Number of MCMC samples must be nonzero"
@@ -538,14 +538,9 @@ rule coalescence_rates:
     output:
         coalrate = "results/{chrom}/{chrom}.{rep,[0-9]+}.coalrate.p"
     params:
-        script = "workflow/scripts/coalescence_rates.py"
-    shell:
-        """
-        python3 {params.script} \
-            --tree-sequence {input.trees} \
-            --output-path {output.coalrate} \
-            --num-time-intervals {COALRATE_INTERVALS}
-        """
+        coalrate_epochs = COALRATE_EPOCHS,
+    script:
+        "scripts/coalescence_rates.py"
 
 
 def plot_coalescence_rates_input(wildcards):
@@ -568,10 +563,7 @@ rule plot_coalescence_rates:
     output:
         pair_coalescence_rates = "results/{chrom}/pair-coalescence-rates.png",
     params:
-        script = "workflow/scripts/plot_coalescence_rates.py"
-    shell:
-        """
-        python3 {params.script} \
-            --coalescence-rates {input.coalrate} \
-            --pair-coalescence-rates-plot {output.pair_coalescence_rates} 
-        """
+        coalrate_epochs = COALRATE_EPOCHS,
+        mcmc_samples = MCMC_SAMPLES,
+    script:
+        "scripts/plot_coalescence_rates.py"
