@@ -81,7 +81,7 @@ meta_file = vcf_file.replace(".vcf.gz", ".meta.csv")
 if not os.path.exists(meta_file):
     logfile.write(f"{tag()} Did not find {meta_file}, inserting sample names into metadata\n")
     metadata = [{"id":name} for name in vcf["samples"]]
-    assert stratify is None, f"\"{meta_file}\" not found, cannot stratify statistics by column \"{stratify}\""
+    assert stratify is None, f"\"{meta_file}\" not found, cannot stratify statistics by column \"{stratify}\", use None instead"
 else:
     meta_file = csv.reader(open(meta_file, "r"))
     metadata = []
@@ -94,6 +94,7 @@ else:
         assert stratify in metadata_names, f"Cannot stratify statistics by column \"{stratify}\" that isn't in metadata"
 
 # filter variants to biallelic, nonmasked
+# TODO: check vcf.ploidy?
 assert not np.all(vcf['calldata/GT'][..., 1] == -1), "VCF must be diploid"
 ploidy = 2
 samples = vcf['samples']

@@ -17,7 +17,7 @@ snakemake --cores=20 --configfile=configs/example_config.yaml
 
 The input files for each chromosome are:
 
-  - __chromosome_name.vcf__ VCF that can be used as SINGER input (diploid, phased, not compressed)
+  - __chromosome_name.vcf.gz__ gzip'd VCF that can be used as SINGER input (diploid, phased)
   - __chromosome_name.mask.bed__ (optional) bed file containing inaccessible intervals
   - __chromosome_name.hapmap__ (optional) recombination map in the format described in the documentation for `msprime.RateMap.read_hapmap` (see [here](https://tskit.dev/msprime/docs/stable/api.html#msprime.RateMap.read_hapmap))
   - __chromosome_name.meta.csv__ (optional) csv containing metadata for each sample in the VCF, that will be inserted into the output tree sequences. The first row should be the field names, with subsequent rows for every sample in the VCF.
@@ -41,6 +41,7 @@ mcmc-thin: 10 # thinning interval between MCMC samples
 mcmc-burnin: 0.2 # proportion of initial samples discarded when computing plots of statistics
 mcmc-resumes: 1000 # maximum number of times to try to resume MCMC on error at a given iteration
 coalrate-intervals: 25 # number of time intervals to calculate coalescence rates within
+stratify-by: "population" # stratify cross coalescence rates by this column in the metadata, or None
 random-seed: 1 # random seed
 singer-binary: "resources/singer-0.1.8-beta-linux-x86_64/singer" # TODO: automatically fetch from SINGER repo; this version is needed for -resume flag
 ```
