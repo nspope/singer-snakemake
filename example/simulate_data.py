@@ -24,6 +24,7 @@ np.random.seed(args.seed)
 # linearly increasing recombination rate
 recmap_pos = np.linspace(0, args.sequence_length, 1001)
 recmap_rates = np.random.uniform(0, args.mutation_rate * (0.01 + recmap_pos[:-1] / recmap_pos[-1]))
+if args.disable_hapmap: recmap_rates[:] = args.mutation_rate
 recmap = msprime.RateMap(position=recmap_pos, rate=recmap_rates)
 
 demo = msprime.Demography.island_model(
@@ -36,7 +37,7 @@ samples = [
 ]
 ts = msprime.sim_ancestry(
     samples=samples,
-    recombination_rate=1e-8 if args.disable_hapmap else recmap, 
+    recombination_rate=recmap,
     demography=demo,
     random_seed=args.seed,
 )
