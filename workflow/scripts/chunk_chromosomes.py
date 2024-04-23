@@ -54,13 +54,14 @@ vcf = allel.read_vcf(vcf_file)
 
 # recombination map
 hapmap_file = vcf_file.replace(".vcf.gz", ".hapmap")
+recombination_rate = snakemake.params.recombination_rate
 if not os.path.exists(hapmap_file):
     logfile.write(
         f"{tag()} Did not find {hapmap_file}, using default recombination "
-        f"rate of {RECOMBINATION_RATE}\n")
+        f"rate of {recombination_rate}\n")
     hapmap = msprime.RateMap(
         position=np.array([0.0, np.max(vcf['variants/POS']) + 1.0]),
-        rate=np.array([RECOMBINATION_RATE]),
+        rate=np.array([recombination_rate]),
     )
 else:
     hapmap = msprime.RateMap.read_hapmap(hapmap_file)

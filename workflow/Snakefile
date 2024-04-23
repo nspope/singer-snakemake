@@ -51,10 +51,10 @@ assert len(CHROMOSOMES) > 0, f"No inputs matching '{INPUT_DIR}/*.vcf.gz'"
 
 rule all:
     input:
-        expand("results/{chrom}/site_density.png", chrom=CHROMOSOMES),
-        expand("results/{chrom}/diversity-scatter.png", chrom=CHROMOSOMES),
-        expand("results/{chrom}/{chrom}.{rep}.trees", chrom=CHROMOSOMES, rep=range(MCMC_SAMPLES)),
-        expand("results/{chrom}/pair-coalescence-rates.png", chrom=CHROMOSOMES),
+        expand("results/{chrom}/plots/site_density.png", chrom=CHROMOSOMES),
+        expand("results/{chrom}/plots/diversity-scatter.png", chrom=CHROMOSOMES),
+        expand("results/{chrom}/plots/pair-coalescence-rates.png", chrom=CHROMOSOMES),
+        expand("results/{chrom}/trees/{chrom}.{rep}.trees", chrom=CHROMOSOMES, rep=range(MCMC_SAMPLES)),
 
 
 checkpoint chunk_chromosomes:
@@ -66,7 +66,7 @@ checkpoint chunk_chromosomes:
         vcf = os.path.join(INPUT_DIR, "{chrom}.vcf.gz"),
     output:
         vcf = "results/{chrom}/{chrom}.vcf",
-        site_density = "results/{chrom}/site_density.png",
+        site_density = "results/{chrom}/plots/site_density.png",
         chunks = directory("results/{chrom}/chunks"),
         vcf_stats = "results/{chrom}/{chrom}.vcf.stats.p",
         ratemap = "results/{chrom}/{chrom}.adjusted_mu.p",
@@ -77,6 +77,7 @@ checkpoint chunk_chromosomes:
         seed = lambda w: SEED_ARRAY[w.chrom],
         chunk_size = CHUNK_SIZE,
         mutation_rate = MUTATION_RATE,
+        recombination_rate = RECOMBINATION_RATE,
         mcmc_samples = MCMC_SAMPLES,
         mcmc_thin = MCMC_THIN,
         polarised = POLARISED,
@@ -133,7 +134,7 @@ rule merge_chunks:
         params = merge_chunks_params,
         recombs = lambda w: merge_chunks_input(w, "recombs")
     output:
-        trees = "results/{chrom}/{chrom}.{rep}.trees"
+        trees = "results/{chrom}/trees/{chrom}.{rep}.trees"
     script:
         "scripts/merge_chunks.py"
 
@@ -151,7 +152,7 @@ rule tree_statistics:
         ratemap = rules.chunk_chromosomes.output.ratemap,
         trees = rules.merge_chunks.output.trees
     output:
-        stats = "results/{chrom}/{chrom}.{rep,[0-9]+}.stats.p"
+        stats = "results/{chrom}/stats/{chrom}.{rep,[0-9]+}.stats.p"
     params:
         mutation_rate = MUTATION_RATE,
         stratify = STRATIFY_BY,
@@ -160,7 +161,7 @@ rule tree_statistics:
 
 
 def diagnostics_input(wildcards):
-    dir = f"results/{wildcards.chrom}"
+    dir = f"results/{wildcards.chrom}/stats"
     out = expand(
         os.path.join(dir, "{chrom}.{rep}.stats.p"),
         chrom=wildcards.chrom,
@@ -183,14 +184,14 @@ rule diagnostics:
         vcf_stats = rules.chunk_chromosomes.output.vcf_stats,
         stats = diagnostics_input,
     output:
-        diversity_scatter = "results/{chrom}/diversity-scatter.png",
-        diversity_trace = "results/{chrom}/diversity-trace.png",
-        diversity_skyline = "results/{chrom}/diversity-skyline.png",
-        tajima_d_scatter = "results/{chrom}/tajima-d-scatter.png",
-        tajima_d_trace = "results/{chrom}/tajima-d-trace.png",
-        tajima_d_skyline = "results/{chrom}/tajima-d-skyline.png",
-        folded_afs = "results/{chrom}/folded-afs.png",
-        unfolded_afs = "results/{chrom}/unfolded-afs.png",
+        diversity_scatter = "results/{chrom}/plots/diversity-scatter.png",
+        diversity_trace = "results/{chrom}/plots/diversity-trace.png",
+        diversity_skyline = "results/{chrom}/plots/diversity-skyline.png",
+        tajima_d_scatter = "results/{chrom}/plots/tajima-d-scatter.png",
+        tajima_d_trace = "results/{chrom}/plots/tajima-d-trace.png",
+        tajima_d_skyline = "results/{chrom}/plots/tajima-d-skyline.png",
+        folded_afs = "results/{chrom}/plots/folded-afs.png",
+        unfolded_afs = "results/{chrom}/plots/unfolded-afs.png",
     params:
         mcmc_samples = MCMC_SAMPLES,
         mcmc_burnin = MCMC_BURNIN,
@@ -216,8 +217,8 @@ rule coalescence_rates:
         ratemap = rules.chunk_chromosomes.output.ratemap,
         trees = rules.merge_chunks.output.trees
     output:
-        coalrate = "results/{chrom}/{chrom}.{rep,[0-9]+}.coalrate.p",
-        crossrate = "results/{chrom}/{chrom}.{rep,[0-9]+}.crossrate.p",
+        coalrate = "results/{chrom}/stats/{chrom}.{rep,[0-9]+}.coalrate.p",
+        crossrate = "results/{chrom}/stats/{chrom}.{rep,[0-9]+}.crossrate.p",
     params:
         coalrate_epochs = COALRATE_EPOCHS,
         stratify = STRATIFY_BY,
@@ -226,7 +227,7 @@ rule coalescence_rates:
 
 
 def plot_coalescence_rates_input(wildcards, what):
-    dir = f"results/{wildcards.chrom}"
+    dir = f"results/{wildcards.chrom}/stats"
     out = expand(
         os.path.join(dir, f"{{chrom}}.{{rep}}.{what}.p"),
         chrom=wildcards.chrom,
@@ -244,8 +245,8 @@ rule plot_coalescence_rates:
         coalrate = lambda w: plot_coalescence_rates_input(w, "coalrate"),
         crossrate = lambda w: plot_coalescence_rates_input(w, "crossrate"),
     output:
-        pair_coalescence_rates = "results/{chrom}/pair-coalescence-rates.png",
-        cross_coalescence_rates = "results/{chrom}/cross-coalescence-rates.png",
+        pair_coalescence_rates = "results/{chrom}/plots/pair-coalescence-rates.png",
+        cross_coalescence_rates = "results/{chrom}/plots/cross-coalescence-rates.png",
     params:
         coalrate_epochs = COALRATE_EPOCHS,
         stratify = STRATIFY_BY,
