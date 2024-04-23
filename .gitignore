@@ -4,6 +4,8 @@
 *.log
 data/
 results/*
+.test-data/diploid*/
+.test-data/haploid*/
 .test-data/diploid*/*
 .test-data/haploid*/*
 
