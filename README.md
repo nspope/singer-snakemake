@@ -56,7 +56,8 @@ The output files for each chromosome will be generated in `results/chromosome_na
   - __chromosome_name.replicate.coalrate.p__ : pair coalescence rates (e.g. inverse of haploid Ne) within equally-spaced quantiles of the empirical distribution of pair coalescence times
   - __chromosome_name.vcf.stats.p__ : "observed values" for summary statistics (e.g. calculated from with `scikit-allel`)
   - __chunks/*__ the raw SINGER output and logs
-  - __pair-coalescence-rates.png__ : pair coalescence rates (e.g. inverse of haploid Ne) within equally-spaced quantiles of the empircal distribution of pair coalescence times, with a thin line for each MCMC replicate and a thick line for the posterior mean
+  - __pair-coalescence-rates.png__ : pair coalescence rates (e.g. inverse of haploid Ne) within equally-spaced quantiles of the empirical distribution of pair coalescence times, with a thin line for each MCMC replicate and a thick line for the posterior mean
+  - __cross-coalescence-rates.png__ : cross-coalescence rates between strata (if supplied) within equally-spaced quantiles of the empirical distribution of pair coalescence times
   - __diversity-trace.png__, __tajima-d-trace.png__ : MCMC trace for fitted nucleotide diversity and Tajima's D
   - __diversity-scatter.png__, __tajima-d-scatter.png__ : observed vs fitted nucleotide diversity and Tajima's D, across chunks
   - __diversity-skyline.png__, __tajima-d-skyline.png__ : observed and fitted nucleotide diversity and Tajima's D, across genome position
