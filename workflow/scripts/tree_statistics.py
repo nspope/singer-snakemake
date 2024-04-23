@@ -26,6 +26,7 @@ mutation_rate = snakemake.params.mutation_rate
 
 diversity = \
     ts.diversity(mode='branch', windows=ratemap.position, span_normalise=True) * mutation_rate
+diversity[ratemap.rate == 0.0] = np.nan
 
 tajima_d = ts.Tajimas_D(mode='branch', windows=ratemap.position)
 tajima_d[ratemap.rate == 0.0] = np.nan

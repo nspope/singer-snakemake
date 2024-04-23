@@ -11,6 +11,7 @@ import numba
 import msprime
 import numpy as np
 import tskit
+from collections import defaultdict
 from datetime import datetime
 
 # --- lib --- #
@@ -131,6 +132,7 @@ def _pair_coalescence_counts(
     return coalescing_pairs
 
 
+# TODO: invoke this inside numba above, 
 def _rates_from_ecdf(weights, atoms, quantiles):
     assert weights.size == atoms.size
     assert np.all(weights > 0.0)
@@ -210,7 +212,6 @@ def pair_coalescence_rates(ts, sample_sets, indexes, windows, num_time_bins=50):
                 quantiles,
             )
             
-
     return coalrate, epochs
 
 
@@ -244,5 +245,29 @@ sample_sets = [list(ts.samples())]
 indexes = [(0, 0)]
 windows = np.linspace(0.0, ts.sequence_length, 2)
 rates, breaks = pair_coalescence_rates(ts, sample_sets, indexes, windows, num_intervals)
-output = {"rates" : rates, "breaks" : breaks}
+output = {"rates" : np.squeeze(rates), "breaks" : np.squeeze(breaks)}
 pickle.dump(output, open(snakemake.output.coalrate, "wb"))
+
+# stratified pair coalescence rates (cross-coalescence)
+output = {}
+if snakemake.params.stratify is not None:
+    sample_sets = defaultdict(list)
+    for ind in ts.individuals():
+        strata = ind.metadata[snakemake.params.stratify]
+        sample_sets[strata].extend(ind.nodes)
+    names = np.array(sorted(sample_sets.keys()))
+    sample_sets = [sample_sets[x] for x in names]
+    cross_rates = np.full((names.size, names.size, num_intervals), np.nan)
+    cross_breaks = np.full((names.size, names.size, num_intervals), np.nan)
+    for i, _ in enumerate(names):
+        indexes = [(i, j) for j in range(names.size)]
+        rates, breaks = \
+            pair_coalescence_rates(ts, sample_sets, indexes, windows, num_intervals)
+        cross_rates[i] = rates[0].T
+        cross_breaks[i] = breaks[0].T
+    output = {
+        "rates" : cross_rates, 
+        "breaks" : cross_breaks, 
+        "names" : names,
+    }
+pickle.dump(output, open(snakemake.output.crossrate, "wb"))

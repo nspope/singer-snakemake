@@ -25,7 +25,7 @@ def tag(step):
 configfile: "config/example_config.yaml"
 
 INPUT_DIR = config["input-dir"]
-CHROMOSOMES = glob_wildcards(os.path.join(INPUT_DIR, "{chrom}.vcf")).chrom
+CHROMOSOMES = glob_wildcards(os.path.join(INPUT_DIR, "{chrom}.vcf.gz")).chrom
 CHUNK_SIZE = float(config["chunk-size"])
 MAX_MISSING = float(config["max-missing"])
 POLARISED = bool(config["polarised"])
@@ -45,6 +45,8 @@ assert MCMC_BURNIN < MCMC_SAMPLES, "Burn-in exceeds number of MCMC samples"
 np.random.seed(RAND_SEED)
 SEED_ARRAY = {n:x for n, x in zip(CHROMOSOMES, np.random.randint(2 ** 20, size=len(CHROMOSOMES)))}
 
+assert len(CHROMOSOMES) > 0, f"No inputs matching '{INPUT_DIR}/*.vcf.gz'"
+
 # ------ rules ------ #
 
 rule all:
@@ -61,8 +63,9 @@ checkpoint chunk_chromosomes:
     data, calculate statistics in chunks, make some plots of site/missing data density.
     """
     input: 
-        vcf = os.path.join(INPUT_DIR, "{chrom}.vcf"),
+        vcf = os.path.join(INPUT_DIR, "{chrom}.vcf.gz"),
     output:
+        vcf = "results/{chrom}/{chrom}.vcf",
         site_density = "results/{chrom}/site_density.png",
         chunks = directory("results/{chrom}/chunks"),
         vcf_stats = "results/{chrom}/{chrom}.vcf.stats.p",
@@ -78,6 +81,7 @@ checkpoint chunk_chromosomes:
         mcmc_thin = MCMC_THIN,
         polarised = POLARISED,
         max_missing = MAX_MISSING,
+        stratify = STRATIFY_BY,
     script:
         "scripts/chunk_chromosomes.py"
 
@@ -150,6 +154,7 @@ rule tree_statistics:
         stats = "results/{chrom}/{chrom}.{rep,[0-9]+}.stats.p"
     params:
         mutation_rate = MUTATION_RATE,
+        stratify = STRATIFY_BY,
     script:
         "scripts/tree_statistics.py"
 
@@ -211,17 +216,19 @@ rule coalescence_rates:
         ratemap = rules.chunk_chromosomes.output.ratemap,
         trees = rules.merge_chunks.output.trees
     output:
-        coalrate = "results/{chrom}/{chrom}.{rep,[0-9]+}.coalrate.p"
+        coalrate = "results/{chrom}/{chrom}.{rep,[0-9]+}.coalrate.p",
+        crossrate = "results/{chrom}/{chrom}.{rep,[0-9]+}.crossrate.p",
     params:
         coalrate_epochs = COALRATE_EPOCHS,
+        stratify = STRATIFY_BY,
     script:
         "scripts/coalescence_rates.py"
 
 
-def plot_coalescence_rates_input(wildcards):
+def plot_coalescence_rates_input(wildcards, what):
     dir = f"results/{wildcards.chrom}"
     out = expand(
-        os.path.join(dir, "{chrom}.{rep}.coalrate.p"),
+        os.path.join(dir, f"{{chrom}}.{{rep}}.{what}.p"),
         chrom=wildcards.chrom,
         rep=range(MCMC_SAMPLES),
     )
@@ -234,11 +241,15 @@ rule plot_coalescence_rates:
     """
     input:
         ratemap = rules.chunk_chromosomes.output.ratemap,
-        coalrate = plot_coalescence_rates_input,
+        coalrate = lambda w: plot_coalescence_rates_input(w, "coalrate"),
+        crossrate = lambda w: plot_coalescence_rates_input(w, "crossrate"),
     output:
         pair_coalescence_rates = "results/{chrom}/pair-coalescence-rates.png",
+        cross_coalescence_rates = "results/{chrom}/cross-coalescence-rates.png",
     params:
         coalrate_epochs = COALRATE_EPOCHS,
+        stratify = STRATIFY_BY,
         mcmc_samples = MCMC_SAMPLES,
+        mcmc_burnin = MCMC_BURNIN,
     script:
         "scripts/plot_coalescence_rates.py"

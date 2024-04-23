@@ -1,5 +1,6 @@
 import msprime
 import numpy as np
+import gzip
 import csv
 import argparse
 
@@ -15,6 +16,7 @@ parser.add_argument("--disable-mask", action="store_true")
 parser.add_argument("--disable-hapmap", action="store_true")
 parser.add_argument("--disable-meta", action="store_true")
 parser.add_argument("--haploid", action="store_true")
+parser.add_argument("--output-prefix", default="example", type=str)
 args = parser.parse_args()
 
 np.random.seed(args.seed)
@@ -66,10 +68,15 @@ if not args.disable_mask:
 
 population_names = np.concatenate([np.repeat(s.population, s.num_samples) for s in samples])
 individual_names = [f"Sample{i:03d}" for i in range(population_names.size)]
-ts.write_vcf(open("example.vcf", "w"), position_transform=lambda x: np.array(x, dtype=np.int64) + 1, individual_names=individual_names)
+
+ts.write_vcf(
+    gzip.open(f"{args.output_prefix}.vcf.gz", "wt"), 
+    position_transform=lambda x: np.array(x, dtype=np.int64) + 1, 
+    individual_names=individual_names,
+)
 
 if not args.disable_hapmap:
-    with open("example.hapmap", "w") as hapmap:
+    with open(f"{args.output_prefix}.hapmap", "w") as hapmap:
         hapmap.write("Chromosome\tPosition(bp)\tRate(cM/Mb)\tMap(cM)\n")
         for start, rate, mappos in zip(
                 recmap.position[1:],
@@ -77,26 +84,26 @@ if not args.disable_hapmap:
                 recmap.get_cumulative_mass(recmap.position[1:]) * 100,
             ):
                 hapmap.write(f"1\t{int(start)}\t{rate:.8f}\t{mappos:.8f}\n")
-    hapmap_check = msprime.RateMap.read_hapmap("example.hapmap", rate_col=2)
+    hapmap_check = msprime.RateMap.read_hapmap(f"{args.output_prefix}.hapmap", rate_col=2)
     np.testing.assert_allclose(hapmap_check.rate[1:], recmap.rate[1:], atol=1e-12)
     np.testing.assert_allclose(hapmap_check.position, recmap.position)
-    hapmap_check = msprime.RateMap.read_hapmap("example.hapmap", map_col=3)
+    hapmap_check = msprime.RateMap.read_hapmap(f"{args.output_prefix}.hapmap", map_col=3)
     np.testing.assert_allclose(hapmap_check.rate, recmap.rate, atol=1e-12)
     np.testing.assert_allclose(hapmap_check.position, recmap.position)
 
 if not args.disable_mask:
-    with open("example.mask.bed", "w") as maskfile:
+    with open(f"{args.output_prefix}.mask.bed", "w") as maskfile:
         for a, b in bedmask:
             maskfile.write(f"1\t{int(a)}\t{int(b)}\n")
-    bedmask_check = np.loadtxt("example.mask.bed", usecols=[1,2])
+    bedmask_check = np.loadtxt(f"{args.output_prefix}.mask.bed", usecols=[1,2])
     np.testing.assert_allclose(bedmask, bedmask_check)
 
 if not args.disable_meta:
-    with open("example.meta.csv", "w") as metafile:
+    with open(f"{args.output_prefix}.meta.csv", "w") as metafile:
         metafile.write("name,population\n")
         for samp, pop in zip(individual_names, population_names):
             metafile.write(f"{samp},\"{pop}\"\n")
-    meta_check = csv.reader(open("example.meta.csv", "r"))
+    meta_check = csv.reader(open(f"{args.output_prefix}.meta.csv", "r"))
     colnames = next(meta_check)
     assert colnames[0] == 'name' and colnames[1] == 'population'
     for i, row in enumerate(meta_check):

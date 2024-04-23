@@ -12,6 +12,7 @@ import allel
 import matplotlib.pyplot as plt
 import yaml
 import pickle
+from collections import defaultdict
 from datetime import datetime
 
 # --- lib --- #
@@ -20,30 +21,25 @@ def tag():
     return f"[singer-snakemake::{snakemake.rule}::{str(datetime.now())}]"
 
 
-def write_vcf(handle, sample_names, CHROM, POS, ID, REF, ALT, GT): 
+def write_minimal_vcf(handle, sample_names, CHROM, POS, ID, REF, ALT, GT): 
     """
     Write a minimal biallelic diploid VCF
     """
-    assert CHROM.size == POS.size == ID.size == REF.size == ALT.size
-    assert np.all(np.diff(POS) > 0)
-    assert GT.shape[0] == CHROM.size and GT.shape[1] == sample_names.size and GT.shape[3] == 2
-    handle.write("##fileformat=VCFv4.2")
-    handle.write("##source=\"singer-snakemake::chunk_chromosomes\"")
-    handle.write("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">")
+    assert CHROM.size == POS.size == ID.size == REF.size
+    assert ALT.ndim == 1 and ALT.size == CHROM.size
+    assert GT.shape[0] == CHROM.size and GT.shape[1] == sample_names.size and GT.shape[2] == 2
+    assert np.all(np.diff(POS) > 0), "Positions non-increasing in VCF"
+    handle.write("##fileformat=VCFv4.2\n")
+    handle.write("##source=\"singer-snakemake::chunk_chromosomes\"\n")
+    handle.write("##FILTER=<ID=PASS,Description=\"All filters passed\">\n")
+    handle.write("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n")
     handle.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT")
-    for sample in sample_names:
-        handle.write(f"\t{sample}")
+    for sample in sample_names: handle.write(f"\t{sample}")
     handle.write("\n")
-    removed = 0
     for chrom, pos, id, ref, alt, gt in zip(CHROM, POS, ID, REF, ALT, GT):
-        if not np.all(np.logical_or(gt == 0, gt == 1)):
-            removed += 1
-        else:
-            handle.write(f"{chrom}\t{pos}\t{id}\t{ref}\t{alt}\t.\tPASS\t.\tGT")
-            for gt in GT:
-                handle.write(f"\t{gt[0]}|{gt[1]}")
-            handle.write("\n")
-    return removed
+        handle.write(f"{chrom}\t{pos}\t{id}\t{ref}\t{alt}\t.\tPASS\t.\tGT")
+        for (a, b) in gt: handle.write(f"\t{a}|{b}")
+        handle.write("\n")
 
 
 # --- implm --- #
@@ -51,12 +47,13 @@ def write_vcf(handle, sample_names, CHROM, POS, ID, REF, ALT, GT):
 logfile = open(snakemake.log.log, "w")
 logfile.write(f"{tag()} Random seed {snakemake.params.seed}\n")
 np.random.seed(snakemake.params.seed)
+stratify = snakemake.params.stratify
 
 vcf_file = snakemake.input.vcf
 vcf = allel.read_vcf(vcf_file)
 
 # recombination map
-hapmap_file = vcf_file.replace(".vcf", ".hapmap")
+hapmap_file = vcf_file.replace(".vcf.gz", ".hapmap")
 if not os.path.exists(hapmap_file):
     logfile.write(
         f"{tag()} Did not find {hapmap_file}, using default recombination "
@@ -69,7 +66,7 @@ else:
     hapmap = msprime.RateMap.read_hapmap(hapmap_file)
 
 # missing data mask
-mask_file = vcf_file.replace(".vcf", ".mask.bed")
+mask_file = vcf_file.replace(".vcf.gz", ".mask.bed")
 if not os.path.exists(mask_file):
     logfile.write(f"{tag()} Did not find {mask_file}, assuming the entire sequence is accessible\n")
     bedmask = np.empty((0, 2))
@@ -80,10 +77,11 @@ bitmask = np.full(int(hapmap.sequence_length), False)
 for (a, b) in bedmask: bitmask[a:b] = True
 
 # metadata
-meta_file = vcf_file.replace(".vcf", ".meta.csv")
+meta_file = vcf_file.replace(".vcf.gz", ".meta.csv")
 if not os.path.exists(meta_file):
     logfile.write(f"{tag()} Did not find {meta_file}, inserting sample names into metadata\n")
     metadata = [{"id":name} for name in vcf["samples"]]
+    assert stratify is None, f"\"{meta_file}\" not found, cannot stratify statistics by column \"{stratify}\""
 else:
     meta_file = csv.reader(open(meta_file, "r"))
     metadata = []
@@ -92,24 +90,30 @@ else:
         assert len(row) == len(metadata_names)
         metadata.append({k:v for k, v in zip(metadata_names, row)})
     assert len(metadata) == vcf["samples"].size, "Must have a metadata row for each sample"
+    if stratify is not None:
+        assert stratify in metadata_names, f"Cannot stratify statistics by column \"{stratify}\" that isn't in metadata"
 
 # filter variants to biallelic, nonmasked
 assert not np.all(vcf['calldata/GT'][..., 1] == -1), "VCF must be diploid"
-genotypes, positions = allel.GenotypeArray(vcf['calldata/GT']), vcf['variants/POS']
+ploidy = 2
+samples = vcf['samples']
+genotypes = allel.GenotypeArray(vcf['calldata/GT']) 
+positions = vcf['variants/POS']
 assert np.max(positions) <= hapmap.sequence_length, "VCF position exceeds hapmap length"
+
 counts = genotypes.count_alleles()
-retain = np.logical_and(counts.is_segregating(), counts.is_biallelic())
+filter_biallelic = np.logical_and(counts.is_segregating(), counts.is_biallelic())
+logfile.write(f"{tag()} Removed {np.sum(~filter_biallelic)} non-biallelic sites\n")
+filter_missing = counts.sum(axis=1) == ploidy * samples.size
+logfile.write(f"{tag()} Removed {np.sum(~filter_missing)} sites with missing data\n")
 masked_sites = np.sum(bitmask[positions - 1])
-if masked_sites:
-    logfile.write(
-        f"{tag()} WARNING: {masked_sites} sites occur in masked regions, "
-        f"but will be visible to SINGER regardless\n"
-    )
+logfile.write(f"{tag()} Removed {masked_sites} sites occuring in masked regions\n")
+
+retain = np.logical_and(filter_biallelic, filter_missing)
 retain = np.logical_and(retain, ~bitmask[positions - 1])
-logfile.write(f"{tag()} Calculating statistics with {np.sum(retain)} of {positions.size} variants\n")
+logfile.write(f"{tag()} Calculating statistics with remaining {np.sum(retain)} variants\n")
 genotypes, positions = genotypes[retain], positions[retain]
-genotypes[genotypes > 0] = 1 # recode all biallelic derived to 1
-counts = genotypes.count_alleles()
+counts = genotypes.count_alleles(max_allele=1)
 assert counts.shape[1] == 2
 
 # divvy chromosome into chunks and compute summary stats per chunk
@@ -131,8 +135,8 @@ tajima_d, *_ = allel.windowed_tajima_d(
     counts,
     windows=np.column_stack([windows[:-1] + 1, windows[1:]]).astype(np.int64),
 )
-folded_afs = allel.sfs_folded(counts, n=2*vcf["samples"].size) / np.sum(~bitmask)
-unfolded_afs = allel.sfs(counts[:, 1], n=2*vcf["samples"].size) / np.sum(~bitmask)
+folded_afs = allel.sfs_folded(counts, n=ploidy * samples.size) / np.sum(~bitmask)
+unfolded_afs = allel.sfs(counts[:, 1], n=ploidy * samples.size) / np.sum(~bitmask)
 Ne = 0.25 * allel.sequence_diversity(positions, counts, is_accessible=~bitmask) / mutation_rate
 logfile.write(f"{tag()} Using ballpark Ne estimate of {Ne}\n")
 
@@ -168,7 +172,7 @@ plt.clf()
 chunks_dir = snakemake.output.chunks
 os.makedirs(f"{chunks_dir}")
 seeds = np.random.randint(0, 2**10, size=filter.size)
-vcf_prefix = vcf_file.removesuffix(".vcf")
+vcf_prefix = snakemake.output.vcf.removesuffix(".vcf")
 adj_mu = np.zeros(windows.size - 1)
 for i in np.flatnonzero(filter):
     start, end = windows[i], windows[i + 1]
@@ -198,6 +202,18 @@ ratemap = msprime.RateMap(
 )
 pickle.dump(ratemap, open(snakemake.output.ratemap, "wb"))
 
+# dump filtered vcf
+write_minimal_vcf(
+    open(snakemake.output.vcf, "w"),
+    vcf['samples'],
+    vcf['variants/CHROM'][retain],
+    vcf['variants/POS'][retain],
+    vcf['variants/ID'][retain],
+    vcf['variants/REF'][retain],
+    vcf['variants/ALT'][retain, 0],
+    vcf['calldata/GT'][retain],
+)
+
 # dump statistics
 diversity[~filter] = np.nan
 tajima_d[~filter] = np.nan
@@ -210,4 +226,17 @@ vcf_stats = {
 pickle.dump(vcf_stats, open(snakemake.output.vcf_stats, "wb"))
 pickle.dump(metadata, open(snakemake.output.metadata, "wb"))
 
-# TODO: diploidize a haploid VCF
+# stratified summary stats (TODO)
+#if stratify is not None:
+#    sample_sets = defaultdict(list)
+#    for i, md in enumerate(metadata):
+#        sample_sets[md[stratify]].append(i)
+#    stratified_counts = genotypes.count_alleles_subpop(sample_sets)
+#    stratified_diversity = {}
+#    stratified_tajima_d = {}
+#    stratified_folded_afs = {}
+#    stratified_unfolded_afs = {}
+#    for nm, cnt in stratified_counts.items():
+#        stratified_diversity[nm] = allel.windowed_diversity(...)
+#        stratified_tajima_d[nm] = allel.windowed_tajima_d(...)
+#    raise ValueError("Not implemented yet")

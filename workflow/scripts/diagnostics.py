@@ -61,6 +61,7 @@ if snakemake.output.diversity_scatter is not None:
     plt.axline((np.nanmean(site_diversity), np.nanmean(site_diversity)), slope=1, color='black')
     plt.xlabel("Site (VCF) diversity per block")
     plt.ylabel("E[diversity] per block")
+    plt.tight_layout()
     plt.savefig(snakemake.output.diversity_scatter)
     plt.clf()
 
@@ -69,6 +70,7 @@ if snakemake.output.tajima_d_scatter is not None:
     plt.axline((np.nanmean(site_tajima_d), np.nanmean(site_tajima_d)), slope=1, color='black')
     plt.xlabel("Site (VCF) Tajima's D per block")
     plt.ylabel("E[Tajima's D] per block")
+    plt.tight_layout()
     plt.savefig(snakemake.output.tajima_d_scatter)
     plt.clf()
 
@@ -76,6 +78,7 @@ if snakemake.output.diversity_trace is not None:
     plt.plot(np.arange(trace_diversity.size), trace_diversity, "-", c='firebrick')
     plt.xlabel("MCMC iteration")
     plt.ylabel("E[diversity]")
+    plt.tight_layout()
     plt.savefig(snakemake.output.diversity_trace)
     plt.clf()
 
@@ -83,6 +86,7 @@ if snakemake.output.tajima_d_trace is not None:
     plt.plot(np.arange(trace_tajima_d.size), trace_tajima_d, "-", c='firebrick')
     plt.xlabel("MCMC iteration")
     plt.ylabel("E[Tajima's D]")
+    plt.tight_layout()
     plt.savefig(snakemake.output.tajima_d_trace)
     plt.clf()
 
@@ -94,6 +98,7 @@ if snakemake.output.diversity_skyline is not None:
     plt.xlabel("Position on chromosome")
     plt.ylabel("Diversity / base")
     plt.legend()
+    plt.tight_layout()
     plt.savefig(snakemake.output.diversity_skyline)
     plt.clf()
 
@@ -105,6 +110,7 @@ if snakemake.output.tajima_d_skyline is not None:
     plt.xlabel("Position on chromosome")
     plt.ylabel("Tajima's D")
     plt.legend()
+    plt.tight_layout()
     plt.savefig(snakemake.output.tajima_d_skyline)
     plt.clf()
 
@@ -117,6 +123,7 @@ if snakemake.output.folded_afs is not None:
     plt.ylabel("# of variants / base")
     plt.yscale("log")
     plt.legend()
+    plt.tight_layout()
     plt.savefig(snakemake.output.folded_afs)
     plt.clf()
 
@@ -129,5 +136,6 @@ if snakemake.output.unfolded_afs is not None:
     plt.ylabel("# of variants / base")
     plt.yscale("log")
     plt.legend()
+    plt.tight_layout()
     plt.savefig(snakemake.output.unfolded_afs)
     plt.clf()
