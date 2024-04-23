@@ -94,9 +94,8 @@ else:
         assert stratify in metadata_names, f"Cannot stratify statistics by column \"{stratify}\" that isn't in metadata"
 
 # filter variants to biallelic, nonmasked
-# TODO: check vcf.ploidy?
 assert not np.all(vcf['calldata/GT'][..., 1] == -1), "VCF must be diploid"
-ploidy = 2
+ploidy = 2 # TODO: support haploid
 samples = vcf['samples']
 genotypes = allel.GenotypeArray(vcf['calldata/GT']) 
 positions = vcf['variants/POS']
