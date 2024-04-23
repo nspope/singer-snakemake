@@ -1,0 +1,2 @@
+input-dir: '.test-workflow/diploid-sans-hapmap'
+mcmc-samples: 10

@@ -1,0 +1,2 @@
+input-dir: '.test-workflow/diploid-sans-mask'
+mcmc-samples: 10

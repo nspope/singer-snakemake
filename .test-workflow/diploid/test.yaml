@@ -1,0 +1,2 @@
+input-dir: '.test-workflow/diploid'
+mcmc-samples: 10

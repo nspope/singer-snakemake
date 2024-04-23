@@ -25,7 +25,6 @@ def tag(step):
 configfile: "config/example_config.yaml"
 
 INPUT_DIR = config["input-dir"]
-CHROMOSOMES = glob_wildcards(os.path.join(INPUT_DIR, "{chrom}.vcf.gz")).chrom
 CHUNK_SIZE = float(config["chunk-size"])
 MAX_MISSING = float(config["max-missing"])
 POLARISED = bool(config["polarised"])
@@ -37,15 +36,17 @@ MCMC_BURNIN = int(float(config["mcmc-burnin"]) * MCMC_SAMPLES)
 MCMC_RESUMES = int(config["mcmc-resumes"] * MCMC_SAMPLES)
 RAND_SEED = int(config["random-seed"])
 COALRATE_EPOCHS = int(config["coalrate-epochs"])
-STRATIFY_BY = config["stratify-by"]
+STRATIFY_BY = None if config["stratify-by"] == "None" else config["stratify-by"]
 SINGER_BINARY = config["singer-binary"] 
 
 assert MCMC_SAMPLES > 0, "Number of MCMC samples must be nonzero"
 assert MCMC_BURNIN < MCMC_SAMPLES, "Burn-in exceeds number of MCMC samples"
+
+CHROMOSOMES = glob_wildcards(os.path.join(INPUT_DIR, "{chrom}.vcf.gz")).chrom
+assert len(CHROMOSOMES) > 0, f"No inputs matching '{INPUT_DIR}/*.vcf.gz'"
+
 np.random.seed(RAND_SEED)
 SEED_ARRAY = {n:x for n, x in zip(CHROMOSOMES, np.random.randint(2 ** 20, size=len(CHROMOSOMES)))}
-
-assert len(CHROMOSOMES) > 0, f"No inputs matching '{INPUT_DIR}/*.vcf.gz'"
 
 # ------ rules ------ #
 

@@ -1,0 +1,3 @@
+input-dir: '.test-workflow/diploid-sans-meta'
+mcmc-samples: 10
+stratify-by: None
