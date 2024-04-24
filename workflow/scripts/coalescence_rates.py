@@ -158,11 +158,10 @@ def _rates_from_ecdf(weights, atoms, quantiles):
     # calculate coalescence rates within intervals
     # this uses a Kaplan-Meier-type censored estimator: https://github.com/tskit-dev/tskit/pull/2119
     coalrate = np.full(quantiles.size - 1, np.nan)
-    if np.all(np.diff(breaks) > 0): # otherwise too little data
-        propcoal = np.diff(quantiles[:-1]) / (1 - quantiles[:-2])
-        coalrate[:-1] = -np.log(1 - propcoal) / np.diff(breaks)
-        last = indices[-1]
-        coalrate[-1] = np.sum(weights[last:]) / np.dot(atoms[last:] - breaks[-1], weights[last:]) 
+    propcoal = np.diff(quantiles[:-1]) / (1 - quantiles[:-2])
+    coalrate[:-1] = -np.log(1 - propcoal) / np.diff(breaks)
+    last = indices[-1]
+    coalrate[-1] = np.sum(weights[last:]) / np.dot(atoms[last:] - breaks[-1], weights[last:]) 
 
     return coalrate, breaks
 
@@ -207,11 +206,12 @@ def pair_coalescence_rates(ts, sample_sets, indexes, windows, num_time_bins=50):
     for w in range(nodes_weight.shape[0]):
         for i in range(nodes_weight.shape[2]):
             inside_window = nodes_weight[w, :, i] > 0
-            coalrate[w, :, i], epochs[w, :, i] = _rates_from_ecdf(
-                nodes_weight[w, inside_window, i], 
-                nodes_time[inside_window], 
-                quantiles,
-            )
+            if np.sum(inside_window) > 0:
+                coalrate[w, :, i], epochs[w, :, i] = _rates_from_ecdf(
+                    nodes_weight[w, inside_window, i], 
+                    nodes_time[inside_window], 
+                    quantiles,
+                )
             
     return coalrate, epochs
 
