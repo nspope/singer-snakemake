@@ -1,5 +1,7 @@
 # manually test that workflows run through to completion with different input options
 
+set -e
+
 WORKFLOWS="
 diploid 
 diploid-sans-meta 

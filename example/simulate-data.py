@@ -63,9 +63,10 @@ bedmask = np.array(bedmask)
 bitmask = np.full(int(recmap.sequence_length) + 1, False)
 for a, b in bedmask: bitmask[a:b] = True
 
-if not args.disable_mask:
-    mask_sites = np.flatnonzero(bitmask[ts.sites_position.astype(np.int64)])
-    ts = ts.delete_sites(mask_sites)
+# pipeline now masks sites
+#if not args.disable_mask:
+#    mask_sites = np.flatnonzero(bitmask[ts.sites_position.astype(np.int64)])
+#    ts = ts.delete_sites(mask_sites)
 
 population_names = np.concatenate([np.repeat(s.population, s.num_samples) for s in samples])
 individual_names = [f"Sample{i:03d}" for i in range(population_names.size)]

@@ -118,6 +118,7 @@ logfile.write(f"{tag()} Removed {masked_sites} sites occuring in masked regions\
 
 retain = np.logical_and(filter_biallelic, filter_missing)
 retain = np.logical_and(retain, ~bitmask[positions - 1])
+assert np.sum(retain) > 0, "No variants left after filtering"
 logfile.write(f"{tag()} Calculating statistics with remaining {np.sum(retain)} variants\n")
 genotypes, positions = genotypes[retain], positions[retain]
 counts = genotypes.count_alleles(max_allele=1)
