@@ -76,8 +76,9 @@ if snakemake.params.stratify is not None:
             mean_rates += rates / (num_mcmc - num_burnin)
             mean_breaks += breaks / (num_mcmc - num_burnin)
             for j, p in enumerate(names):
+                row, col = j // ncol, j % ncol 
                 for k, q in enumerate(names):
-                    axs[j].step(
+                    axs[row, col].step(
                         breaks[j, k], 
                         rates[j, k], 
                         color=cmap(k / names.size), 
