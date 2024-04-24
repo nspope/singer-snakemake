@@ -94,18 +94,24 @@ else:
     if stratify is not None:
         assert stratify in metadata_names, f"Cannot stratify statistics by column \"{stratify}\" that isn't in metadata"
 
-# filter variants to biallelic, nonmasked
-assert not np.all(vcf['calldata/GT'][..., 1] == -1), "VCF must be diploid"
-ploidy = 2 # TODO: support haploid
+# convert to diploid VCF if necessary
+assert vcf['calldata/GT'].shape[2] == 2
+ploidy = 1 if np.all(vcf['calldata/GT'][..., 1] == -1) else 2
+if ploidy == 1:
+    assert vcf['samples'].size % 2 == 0, "VCF is haploid with an odd number of samples: cannot diploidize"
+    logfile.write(f"{tag()} VCF is haploid, converting to diploid for SINGER\n")
+    vcf['samples'] = np.array([f"{a}_{b}" for a, b in zip(vcf['samples'][::2], vcf['samples'][1::2])])
+    vcf['calldata/GT'] = vcf['calldata/GT'][..., 0].reshape(-1, vcf['samples'].size, 2)
 samples = vcf['samples']
 genotypes = allel.GenotypeArray(vcf['calldata/GT']) 
 positions = vcf['variants/POS']
 assert np.max(positions) <= hapmap.sequence_length, "VCF position exceeds hapmap length"
 
+# filter variants to biallelic, nonmasked
 counts = genotypes.count_alleles()
 filter_biallelic = np.logical_and(counts.is_segregating(), counts.is_biallelic())
 logfile.write(f"{tag()} Removed {np.sum(~filter_biallelic)} non-biallelic sites\n")
-filter_missing = counts.sum(axis=1) == ploidy * samples.size
+filter_missing = counts.sum(axis=1) == 2 * samples.size
 logfile.write(f"{tag()} Removed {np.sum(~filter_missing)} sites with missing data\n")
 masked_sites = np.sum(bitmask[positions - 1])
 logfile.write(f"{tag()} Removed {masked_sites} sites occuring in masked regions\n")
@@ -136,8 +142,8 @@ tajima_d, *_ = allel.windowed_tajima_d(
     counts,
     windows=np.column_stack([windows[:-1] + 1, windows[1:]]).astype(np.int64),
 )
-folded_afs = allel.sfs_folded(counts, n=ploidy * samples.size) / np.sum(~bitmask)
-unfolded_afs = allel.sfs(counts[:, 1], n=ploidy * samples.size) / np.sum(~bitmask)
+folded_afs = allel.sfs_folded(counts, n=2 * samples.size) / np.sum(~bitmask)
+unfolded_afs = allel.sfs(counts[:, 1], n=2 * samples.size) / np.sum(~bitmask)
 Ne = 0.25 * allel.sequence_diversity(positions, counts, is_accessible=~bitmask) / mutation_rate
 logfile.write(f"{tag()} Using ballpark Ne estimate of {Ne}\n")
 

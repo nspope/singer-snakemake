@@ -17,7 +17,7 @@ snakemake --cores=20 --configfile=configs/example_config.yaml
 
 The input files for each chromosome are:
 
-  - __chromosome_name.vcf.gz__ gzip'd VCF that can be used as SINGER input (diploid, phased)
+  - __chromosome_name.vcf.gz__ gzip'd VCF that can be used as SINGER input, either diploid and **phased** or haploid with an even number of samples
   - __chromosome_name.mask.bed__ (optional) bed file containing inaccessible intervals
   - __chromosome_name.hapmap__ (optional) recombination map in the format described in the documentation for `msprime.RateMap.read_hapmap` (see [here](https://tskit.dev/msprime/docs/stable/api.html#msprime.RateMap.read_hapmap))
   - __chromosome_name.meta.csv__ (optional) csv containing metadata for each sample in the VCF, that will be inserted into the output tree sequences. The first row should be the field names, with subsequent rows for every sample in the VCF.

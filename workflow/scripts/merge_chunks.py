@@ -26,10 +26,6 @@ metadata = pickle.load(open(snakemake.input.metadata, "rb"))
 tables = tskit.TableCollection(sequence_length=ratemap.sequence_length)
 nodes, edges, individuals = tables.nodes, tables.edges, tables.individuals
 
-individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
-for x in metadata: 
-    individuals.add_row(metadata=x)
-
 num_nodes, num_samples = 0, 0
 files = zip(snakemake.input.params, snakemake.input.recombs)
 for i, (params_file, recomb_file) in enumerate(files):
@@ -43,13 +39,17 @@ for i, (params_file, recomb_file) in enumerate(files):
     # nodes
     node_time = np.loadtxt(node_file)
     num_nodes = nodes.num_rows - num_samples
+    if individuals.num_rows == 0:
+        num_samples = np.sum(node_time == 0.0)
+        individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
+        for x in metadata: individuals.add_row(metadata=x)
+        ploidy = num_samples / individuals.num_rows
+        assert ploidy == 1.0 or ploidy == 2.0
+        for i in range(num_samples):
+            nodes.add_row(flags=tskit.NODE_IS_SAMPLE, individual=i // int(ploidy))
     min_time = 0
     for t in node_time:
-        if t == 0:
-            if i == 0:
-                nodes.add_row(flags=tskit.NODE_IS_SAMPLE, individual=num_samples // 2)
-                num_samples += 1
-        else:
+        if t > 0.0:
             #TODO: assertion triggers rarely (FP error?)
             #assert t >= min_time 
             t = max(min_time + 1e-7, t)
