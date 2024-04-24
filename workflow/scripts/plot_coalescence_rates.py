@@ -15,6 +15,7 @@ import numba
 import msprime
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import itertools
 import tskit
 from datetime import datetime
@@ -91,19 +92,23 @@ if snakemake.params.stratify is not None:
         mean_rates[j, k, :-1] = weights / np.diff(mean_breaks[j, k])
 
     for j, p in enumerate(names):
+        row, col = j // ncol, j % ncol 
         for k, q in enumerate(names):
-            axs[j].step(
+            axs[row, col].step(
                 mean_breaks[j, k], 
                 mean_rates[j, k], 
                 color=cmap(k / names.size), 
                 label=q, 
                 linewidth=2,
             )
-        axs[j].set_title(f"With {p}", loc='center')
-        axs[j].set_yscale('log')
-        axs[j].set_xscale('log')
-        axs[j].legend()
+        axs[row, col].set_title(f"With {p}", loc='center')
+        axs[row, col].set_yscale('log')
+        axs[row, col].set_xscale('log')
     fig.supxlabel("Generations in the past")
     fig.supylabel("Coalescence rate")
+    legend = []
+    for k, q in enumerate(names):
+        legend.append(Line2D([0], [0], color=cmap(k / names.size), label=q, lw=2))
+    fig.legend(handles=legend, loc='center left', bbox_to_anchor=(1, 0.5))
     fig.tight_layout()
-plt.savefig(snakemake.output.cross_coalescence_rates)
+plt.savefig(snakemake.output.cross_coalescence_rates, bbox_inches="tight")
