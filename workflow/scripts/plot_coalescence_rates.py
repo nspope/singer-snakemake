@@ -65,7 +65,7 @@ if snakemake.params.stratify is not None:
 
     ncol = 3
     nrow = int(np.ceil(names.size / ncol))
-    fig, axs = plt.subplots(nrow, ncol, figsize=(4 * ncol + 1, 4 * nrow), sharex=True)
+    fig, axs = plt.subplots(nrow, ncol, figsize=(4 * ncol + 1, 4 * nrow), sharex=True, sharey=True)
     cmap = plt.get_cmap("tab10", names.size)
 
     mean_rates = rates / num_mcmc

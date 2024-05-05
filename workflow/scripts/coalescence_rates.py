@@ -165,11 +165,11 @@ def _rates_from_ecdf(weights, atoms, quantiles):
 
     return coalrate, breaks
 
-
-def pair_coalescence_rates(ts, sample_sets, indexes, windows, num_time_bins=50):
+def weighted_pair_coalescence_rates(ts, sample_sets, indexes, windows, window_weights, num_time_bins=50):
     """
-    Calculate pair coalescence rates within equally-spaced quantiles over a set
-    of genomic windows. E.g. calculate the inverse of effective population size
+    Calculate pair coalescence rates within equally-spaced quantiles over the
+    chromosome, with a weighted contribution over genomic windows (ie weighted
+    by missing data).  E.g. calculate the inverse of effective population size
     in N epochs wherein a proportion 1/N of pairs coalescece.
     """
 
@@ -199,21 +199,77 @@ def pair_coalescence_rates(ts, sample_sets, indexes, windows, num_time_bins=50):
     nodes_time = ts.nodes_time[nodes_order]
     nodes_weight = nodes_weight[:, nodes_order, :]
 
+    # NB: global statistics must be weighted by the proportion of missing data
+    nodes_weight *= window_weights[:, np.newaxis, np.newaxis]
+    nodes_weight = nodes_weight.sum(axis=0)
+    assert nodes_weight.shape[0] == ts.num_nodes
+    assert nodes_weight.shape[1] == len(indexes)
+
     # convert to coalescence rates
     quantiles = np.linspace(0.0, 1.0, num_time_bins + 1)
-    coalrate = np.full((nodes_weight.shape[0], num_time_bins, nodes_weight.shape[2]), np.nan)
-    epochs = np.full((nodes_weight.shape[0], num_time_bins, nodes_weight.shape[2]), np.nan)
-    for w in range(nodes_weight.shape[0]):
-        for i in range(nodes_weight.shape[2]):
-            inside_window = nodes_weight[w, :, i] > 0
-            if np.sum(inside_window) > 0:
-                coalrate[w, :, i], epochs[w, :, i] = _rates_from_ecdf(
-                    nodes_weight[w, inside_window, i], 
-                    nodes_time[inside_window], 
-                    quantiles,
-                )
+    coalrate = np.full((num_time_bins, nodes_weight.shape[1]), np.nan)
+    epochs = np.full((num_time_bins, nodes_weight.shape[1]), np.nan)
+    for i in range(nodes_weight.shape[1]):
+        inside_window = nodes_weight[:, i] > 0
+        assert np.sum(inside_window) > 0, "No data in window"
+        coalrate[:, i], epochs[:, i] = _rates_from_ecdf(
+            nodes_weight[inside_window, i], 
+            nodes_time[inside_window], 
+            quantiles,
+        )
             
     return coalrate, epochs
+
+
+# NB: use this for windowed statistics in a separate script (TODO)
+#def pair_coalescence_rates(ts, sample_sets, indexes, windows, num_time_bins=50):
+#    """
+#    Calculate pair coalescence rates within equally-spaced quantiles over a set
+#    of genomic windows. E.g. calculate the inverse of effective population size
+#    in N epochs wherein a proportion 1/N of pairs coalescece.
+#    """
+#
+#    nodes_sample = np.zeros((ts.num_nodes, len(sample_sets)))
+#    for i, s in enumerate(sample_sets):
+#        nodes_sample[s, i] = 1
+#
+#    indexes_array = np.zeros((len(indexes), 2), dtype=np.int32)
+#    for i, (j, k) in enumerate(indexes):
+#        indexes_array[i, :] = j, k
+#
+#    # count number of coalescing pairs per node
+#    nodes_weight = _pair_coalescence_counts(
+#        indexes_array,
+#        windows,
+#        nodes_sample,
+#        ts.edges_child.copy(),
+#        ts.edges_parent.copy(),
+#        ts.edges_left.copy(),
+#        ts.edges_right.copy(),
+#        ts.indexes_edge_insertion_order.copy(),
+#        ts.indexes_edge_removal_order.copy(),
+#        ts.sequence_length,
+#    )
+#    
+#    nodes_order = np.argsort(ts.nodes_time)
+#    nodes_time = ts.nodes_time[nodes_order]
+#    nodes_weight = nodes_weight[:, nodes_order, :]
+#
+#    # convert to coalescence rates
+#    quantiles = np.linspace(0.0, 1.0, num_time_bins + 1)
+#    coalrate = np.full((nodes_weight.shape[0], num_time_bins, nodes_weight.shape[2]), np.nan)
+#    epochs = np.full((nodes_weight.shape[0], num_time_bins, nodes_weight.shape[2]), np.nan)
+#    for w in range(nodes_weight.shape[0]):
+#        for i in range(nodes_weight.shape[2]):
+#            inside_window = nodes_weight[w, :, i] > 0
+#            if np.sum(inside_window) > 0:
+#                coalrate[w, :, i], epochs[w, :, i] = _rates_from_ecdf(
+#                    nodes_weight[w, inside_window, i], 
+#                    nodes_time[inside_window], 
+#                    quantiles,
+#                )
+#            
+#    return coalrate, epochs
 
 
 def simulation_test(seed, popsize, num_epochs):
@@ -240,16 +296,18 @@ def simulation_test(seed, popsize, num_epochs):
 
 num_intervals = snakemake.params.coalrate_epochs
 ts = tskit.load(snakemake.input.trees)
+ratemap = pickle.load(open(snakemake.input.ratemap, "rb"))
 
 # global pair coalescence rates
 sample_sets = [list(ts.samples())]
 indexes = [(0, 0)]
-windows = np.linspace(0.0, ts.sequence_length, 2)
-rates, breaks = pair_coalescence_rates(ts, sample_sets, indexes, windows, num_intervals)
+windows = ratemap.position
+weights = ratemap.rate / np.sum(ratemap.rate)
+rates, breaks = weighted_pair_coalescence_rates(ts, sample_sets, indexes, windows, weights, num_intervals)
 output = {"rates" : np.squeeze(rates), "breaks" : np.squeeze(breaks)}
 pickle.dump(output, open(snakemake.output.coalrate, "wb"))
 
-# stratified pair coalescence rates (cross-coalescence)
+# stratified global pair coalescence rates (cross-coalescence)
 output = {}
 if snakemake.params.stratify is not None:
     sample_sets = defaultdict(list)
@@ -263,9 +321,9 @@ if snakemake.params.stratify is not None:
     for i, _ in enumerate(names):
         indexes = [(i, j) for j in range(names.size)]
         rates, breaks = \
-            pair_coalescence_rates(ts, sample_sets, indexes, windows, num_intervals)
-        cross_rates[i] = rates[0].T
-        cross_breaks[i] = breaks[0].T
+            weighted_pair_coalescence_rates(ts, sample_sets, indexes, windows, weights, num_intervals)
+        cross_rates[i] = rates.T
+        cross_breaks[i] = breaks.T
     output = {
         "rates" : cross_rates, 
         "breaks" : cross_breaks, 
