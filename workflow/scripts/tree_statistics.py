@@ -31,11 +31,16 @@ diversity[ratemap.rate == 0.0] = np.nan
 tajima_d = ts.Tajimas_D(mode='branch', windows=ratemap.position)
 tajima_d[ratemap.rate == 0.0] = np.nan
 
+# NB: "global" statistics have to be weighted by missing data per block
 folded_afs = \
-    ts.allele_frequency_spectrum(mode='branch', span_normalise=True) * mutation_rate * 2
+    ts.allele_frequency_spectrum(mode='branch', windows=ratemap.position, span_normalise=True)
+folded_afs *= ratemap.rate[:, np.newaxis] / np.sum(ratemap.rate)
+folded_afs = np.sum(folded_afs, axis=0) * mutation_rate * 2
 
 unfolded_afs = \
-    ts.allele_frequency_spectrum(mode='branch', span_normalise=True, polarised=True) * mutation_rate
+    ts.allele_frequency_spectrum(mode='branch', windows=ratemap.position, span_normalise=True, polarised=True) 
+unfolded_afs *= ratemap.rate[:, np.newaxis] / np.sum(ratemap.rate)
+unfolded_afs = np.sum(unfolded_afs, axis=0) * mutation_rate
 
 stats = {
     "diversity" : diversity, 

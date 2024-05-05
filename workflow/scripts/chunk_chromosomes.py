@@ -190,7 +190,7 @@ for i in np.flatnonzero(filter):
     chunk_params = {
         "thin" : int(snakemake.params.mcmc_thin), 
         "n" : int(snakemake.params.mcmc_samples),
-        "Ne" : float(Ne), 
+        "Ne" : float(Ne),
         "m" : float(adj_mu[i]), 
         "input" : str(vcf_prefix), 
         "start" : int(start), 
