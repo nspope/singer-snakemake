@@ -10,7 +10,7 @@ Using `git` and `mamba` and `pip`:
 git clone https://github.com/nspope/singer-snakemake my-singer-run && cd my-singer-run
 mamba install -c bioconda snakemake
 python3 -m pip install -r requirements.txt
-snakemake --cores=20 --configfile=configs/example_config.yaml
+snakemake --cores=20 --configfile=config/example_config.yaml
 ```
 
 ### Inputs
