@@ -131,7 +131,43 @@ lower = np.min(positions) - 1
 upper = np.max(positions) + 1 
 windows = np.linspace(lower, upper, int((upper - lower) / chunk_size) + 1)
 windows = np.unique(np.append(np.append(0, windows), hapmap.sequence_length))
-diversity, _, num_nonmissing, num_sites = allel.windowed_diversity(
+logfile.write(
+    f"{tag()} Chunking chromosome into {windows.size - 1} windows "
+    f"from {windows[0]} to {windows[-1]}\n"
+)
+
+# count missing bases
+*_, num_nonmissing, num_sites = allel.windowed_diversity(
+    positions,
+    counts,
+    windows=np.column_stack([windows[:-1] + 1, windows[1:]]).astype(np.int64),
+    is_accessible=~bitmask,
+    fill=0.0,
+)
+
+# average recombination rate within chunks
+rec_rate = np.diff(hapmap.get_cumulative_mass(windows)) / np.diff(windows)
+
+# filter chunks with too much missingness or zero recombination rate
+num_total = np.diff(windows)
+num_missing = num_total - num_nonmissing
+prop_missing = num_missing / num_total
+prop_snp = num_sites / num_nonmissing
+prop_snp[np.isnan(prop_snp)] = 0.0
+filter = np.logical_and(prop_missing < snakemake.params.max_missing, prop_snp > 0.0)
+filter = np.logical_and(filter, rec_rate > 0.0)
+logfile.write(
+    f"{tag()} Skipping {np.sum(~filter)} (of {filter.size}) "
+    f"chunks with too much missing data or zero recombination rate\n"
+)
+
+# update site mask to reflect filtered chunks
+for i in np.flatnonzero(filter):
+    start, end = windows[i], windows[i + 1]
+    bitmask[int(start):int(end)] = False
+
+# calculate stats and get ballpark Ne estimate
+diversity, *_ = allel.windowed_diversity(
     positions,
     counts,
     windows=np.column_stack([windows[:-1] + 1, windows[1:]]).astype(np.int64),
@@ -147,19 +183,6 @@ folded_afs = allel.sfs_folded(counts, n=2 * samples.size) / np.sum(~bitmask)
 unfolded_afs = allel.sfs(counts[:, 1], n=2 * samples.size) / np.sum(~bitmask)
 Ne = 0.25 * allel.sequence_diversity(positions, counts, is_accessible=~bitmask) / mutation_rate
 logfile.write(f"{tag()} Using ballpark Ne estimate of {Ne}\n")
-
-# average recombination rate within chunks
-rec_rate = np.diff(hapmap.get_cumulative_mass(windows)) / np.diff(windows)
-
-# filter chunks with too much missingness or zero recombination rate
-num_total = np.diff(windows)
-num_missing = num_total - num_nonmissing
-prop_missing = num_missing / num_total
-prop_snp = num_sites / num_nonmissing
-prop_snp[np.isnan(prop_snp)] = 0.0
-filter = np.logical_and(prop_missing < snakemake.params.max_missing, prop_snp > 0.0)
-filter = np.logical_and(filter, rec_rate > 0.0)
-logfile.write(f"{tag()} Skipping {np.sum(~filter)} (of {filter.size}) chunks with too much missing data\n")
 
 # plot site density and recombination rate as sanity check
 fig, axs = plt.subplots(3, 1, figsize=(8, 8), sharex=True)
