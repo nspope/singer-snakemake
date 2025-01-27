@@ -35,7 +35,7 @@ tajima_d[ratemap.rate == 0.0] = np.nan
 folded_afs = \
     ts.allele_frequency_spectrum(mode='branch', windows=ratemap.position, span_normalise=True)
 folded_afs *= ratemap.rate[:, np.newaxis] / np.sum(ratemap.rate)
-folded_afs = np.sum(folded_afs, axis=0) * mutation_rate * 2
+folded_afs = np.sum(folded_afs, axis=0) * mutation_rate
 
 unfolded_afs = \
     ts.allele_frequency_spectrum(mode='branch', windows=ratemap.position, span_normalise=True, polarised=True) 

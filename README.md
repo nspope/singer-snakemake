@@ -8,8 +8,8 @@ Using `git` and `mamba` and `pip`:
 
 ```bash
 git clone https://github.com/nspope/singer-snakemake my-singer-run && cd my-singer-run
-mamba install -c bioconda snakemake
-python3 -m pip install -r requirements.txt
+mamba env create -f environment.yaml 
+mamba activate singer-snakemake-env
 snakemake --cores=20 --configfile=config/example_config.yaml
 ```
 
