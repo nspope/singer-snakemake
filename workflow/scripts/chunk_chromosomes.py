@@ -162,9 +162,13 @@ logfile.write(
 )
 
 # update site mask to reflect filtered chunks
-for i in np.flatnonzero(filter):
+for i in np.flatnonzero(~filter):
     start, end = windows[i], windows[i + 1]
-    bitmask[int(start):int(end)] = False
+    bitmask[int(start):int(end)] = True
+logfile.write(
+    f"{tag()} Updating site mask with skipped chunks, went from "
+    f"{np.sum(num_nonmissing)} to {np.sum(~bitmask)} unmasked bases\n"
+)
 
 # calculate stats and get ballpark Ne estimate
 diversity, *_ = allel.windowed_diversity(
