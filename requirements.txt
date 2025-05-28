@@ -1,4 +1,4 @@
-tskit @ git+https://github.com/tskit-dev/tskit@main
+tskit @ git+https://github.com/tskit-dev/tskit.git#subdirectory=python
 snakemake>=8.0.0
 msprime
 scikit-allel
