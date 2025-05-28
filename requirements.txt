@@ -1,9 +1,8 @@
-tskit>=0.5.8
+tskit @ git+https://github.com/tskit-dev/tskit@main
 snakemake>=8.0.0
 msprime
 scikit-allel
 numpy
 pyyaml
 matplotlib
-numba
 argparse

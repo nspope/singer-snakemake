@@ -14,7 +14,6 @@ import matplotlib.pyplot as plt
 import yaml
 import pickle
 import subprocess
-import numba
 from datetime import datetime
 
 def tag(step): 
@@ -54,7 +53,8 @@ rule all:
     input:
         expand("results/{chrom}/plots/site_density.png", chrom=CHROMOSOMES),
         expand("results/{chrom}/plots/diversity-scatter.png", chrom=CHROMOSOMES),
-        expand("results/{chrom}/plots/pair-coalescence-rates.png", chrom=CHROMOSOMES),
+        expand("results/{chrom}/plots/pair-coalescence-pdf.png", chrom=CHROMOSOMES),
+        expand("results/{chrom}/plots/cross-coalescence-pdf.png", chrom=CHROMOSOMES),
         expand("results/{chrom}/trees/{chrom}.{rep}.trees", chrom=CHROMOSOMES, rep=range(MCMC_SAMPLES)),
 
 
@@ -115,6 +115,7 @@ def merge_chunks_params(wildcards):
     )
     return out
 
+
 def merge_chunks_input(wildcards, regex):
     dir = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks
     out = expand(
@@ -123,6 +124,7 @@ def merge_chunks_input(wildcards, regex):
         id=glob_wildcards(os.path.join(dir, "{id}.yaml")).id
     )
     return out
+
 
 rule merge_chunks:
     """
@@ -169,6 +171,7 @@ def diagnostics_input(wildcards):
         rep=range(MCMC_SAMPLES),
     )
     return out
+
 
 rule diagnostics:
     """
@@ -236,18 +239,18 @@ def plot_coalescence_rates_input(wildcards, what):
     )
     return out
 
+
 rule plot_coalescence_rates:
     """
-    Plot pair/cross coalescence rates within equally spaced quantiles of the
-    empirical coalescence time distribution.
+    Plot distributions of pair coalescence times.
     """
     input:
         ratemap = rules.chunk_chromosomes.output.ratemap,
         coalrate = lambda w: plot_coalescence_rates_input(w, "coalrate"),
         crossrate = lambda w: plot_coalescence_rates_input(w, "crossrate"),
     output:
-        pair_coalescence_rates = "results/{chrom}/plots/pair-coalescence-rates.png",
-        cross_coalescence_rates = "results/{chrom}/plots/cross-coalescence-rates.png",
+        pair_coalescence_pdf = "results/{chrom}/plots/pair-coalescence-pdf.png",
+        cross_coalescence_pdf = "results/{chrom}/plots/cross-coalescence-pdf.png",
     params:
         coalrate_epochs = COALRATE_EPOCHS,
         stratify = STRATIFY_BY,
