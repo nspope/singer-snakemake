@@ -45,25 +45,28 @@ for i, (params_file, recomb_file) in enumerate(files):
     node_time = np.loadtxt(node_file)
     num_nodes = nodes.num_rows - num_samples
     if individuals.num_rows == 0:
-        population = -1
+        population = []
         num_samples = np.sum(node_time == 0.0)
         individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
         populations.metadata_schema = tskit.MetadataSchema.permissive_json()
         for meta in metadata: 
             individuals.add_row(metadata=meta)
             if stratify in meta:  # recode as integer
-                population = meta[stratify] 
-                if not population in population_map:
-                    population_map[population] = len(population_map)
+                population_name = meta[stratify] 
+                if not population_name in population_map:
+                    population_map[population_name] = len(population_map)
                     populations.add_row(metadata={"name": population})
-                population = population_map[population]
+                population.append(population_map[population_name])
+            else:
+                population.append(-1)
         ploidy = num_samples / individuals.num_rows
         assert ploidy == 1.0 or ploidy == 2.0
         for i in range(num_samples):
+            individual = i // int(ploidy)
             nodes.add_row(
                 flags=tskit.NODE_IS_SAMPLE, 
-                population=population,
-                individual=i // int(ploidy),
+                population=population[individual],
+                individual=individual,
             )
     min_time = 0
     for t in node_time:  # NB: nodes are sorted, ascending in time
