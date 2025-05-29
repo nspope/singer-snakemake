@@ -21,16 +21,17 @@ def tag():
 
 def weighted_pair_coalescence_rates(
     ts, sample_sets, indexes, windows, prop_accessible=None, 
-    num_time_bins=25, log_time_bounds=[1, 7],
+    num_time_bins=25, log_time_bounds=[1, 7], cutoff=0.05,
 ):
     """
     Calculate marginal pair coalescence rates, weighted by the proportion of
-    missing data in each window and summed over windows
+    missing data in each window and summed over windows. Rates are not
+    calculated where the proportion of uncoalesced pairs drops below `cutoff`.
     """
     if prop_accessible is None: prop_accessible = np.ones(windows.size - 1)
     max_time = ts.nodes_time.max()
     time_windows = np.logspace(*log_time_bounds, num_time_bins + 1)
-    pair_coalescence_counts = ts.pair_coalescence_counts(
+    counts = ts.pair_coalescence_counts(
         sample_sets=sample_sets,
         indexes=indexes,
         windows=windows,
@@ -38,21 +39,22 @@ def weighted_pair_coalescence_rates(
         pair_normalise=True,
         span_normalise=True,
     )
-    #assert np.all(pair_coalescence_counts >= 0.0)
+    #assert np.all(counts >= 0.0)
     weights = prop_accessible * np.diff(windows)
     weights /= np.sum(weights)
     counts *= weights[:, np.newaxis, np.newaxis]
     counts = np.sum(counts, axis=0)
-    # TODO: check
-    surv = 1 - np.hstack([np.zeros((counts.shape[0], 1)), np.cumsum(counts, axis=1)])
+    survival = np.hstack([
+        np.ones((counts.shape[0], 1)), 
+        1 - np.cumsum(counts, axis=1)
+    ])
+    intervals = np.diff(time_windows)
     rates = np.full_like(counts, np.nan)
-    for s, r in zip(surv, rates):
-
-    rates = (np.log(surv[:, :-1]) - np.log(surv[:, 1:])) / \
-        np.diff(time_windows)[np.newaxis, :]
-    # /TODO
-    epochs = np.tile(time_windows[:-1], (pair_coalescence_counts.shape[0], 1))
-    return pair_coalescence_rates.T, pair_coalescence_counts.T, epochs.T
+    for s, r in zip(survival, rates):
+        i = np.argmax(s <= cutoff)
+        r[:i] = (np.log(s[:i]) - np.log(s[1:i+1])) / intervals[:i]
+    epochs = np.tile(time_windows[:-1], (counts.shape[0], 1))
+    return rates, counts, epochs
 
 
 
@@ -121,9 +123,9 @@ if snakemake.params.stratify is not None:
                 ts, sample_sets, indexes, windows, 
                 weights, num_time_bins=num_intervals,
             )
-        cross_rates[i] = rates.T
-        cross_pdf[i] = pdf.T
-        cross_breaks[i] = breaks.T
+        cross_rates[i] = rates
+        cross_pdf[i] = pdf
+        cross_breaks[i] = breaks
     output = {
         "rates" : cross_rates, 
         "pdf" : cross_pdf,

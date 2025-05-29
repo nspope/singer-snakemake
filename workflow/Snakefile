@@ -54,7 +54,9 @@ rule all:
         expand("results/{chrom}/plots/site_density.png", chrom=CHROMOSOMES),
         expand("results/{chrom}/plots/diversity-scatter.png", chrom=CHROMOSOMES),
         expand("results/{chrom}/plots/pair-coalescence-pdf.png", chrom=CHROMOSOMES),
+        expand("results/{chrom}/plots/pair-coalescence-rates.png", chrom=CHROMOSOMES),
         expand("results/{chrom}/plots/cross-coalescence-pdf.png", chrom=CHROMOSOMES),
+        expand("results/{chrom}/plots/cross-coalescence-rates.png", chrom=CHROMOSOMES),
         expand("results/{chrom}/trees/{chrom}.{rep}.trees", chrom=CHROMOSOMES, rep=range(MCMC_SAMPLES)),
 
 
@@ -138,6 +140,8 @@ rule merge_chunks:
         recombs = lambda w: merge_chunks_input(w, "recombs")
     output:
         trees = "results/{chrom}/trees/{chrom}.{rep}.trees"
+    params:
+        stratify = STRATIFY_BY,
     script:
         "scripts/merge_chunks.py"
 
@@ -251,6 +255,8 @@ rule plot_coalescence_rates:
     output:
         pair_coalescence_pdf = "results/{chrom}/plots/pair-coalescence-pdf.png",
         cross_coalescence_pdf = "results/{chrom}/plots/cross-coalescence-pdf.png",
+        pair_coalescence_rates = "results/{chrom}/plots/pair-coalescence-rates.png",
+        cross_coalescence_rates = "results/{chrom}/plots/cross-coalescence-rates.png",
     params:
         coalrate_epochs = COALRATE_EPOCHS,
         stratify = STRATIFY_BY,

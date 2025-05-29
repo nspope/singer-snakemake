@@ -20,6 +20,9 @@ def tag():
 
 # --- implm --- #
 
+min_branch_length = 1e-7  # TODO: make settable?
+stratify = snakemake.params.stratify
+
 ratemap = pickle.load(open(snakemake.input.ratemap, "rb"))
 metadata = pickle.load(open(snakemake.input.metadata, "rb"))
 
@@ -46,13 +49,14 @@ for i, (params_file, recomb_file) in enumerate(files):
         num_samples = np.sum(node_time == 0.0)
         individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
         populations.metadata_schema = tskit.MetadataSchema.permissive_json()
-        for x in metadata: individuals.add_row(metadata=x)
-        if "population" in x:  # recode as integer
-            population = x["population"] 
-            if not population in population_map:
-                population_map[population] = len(population_map)
-                populations.add_row(metadata={"name": population})
-            population = population_map[population]
+        for meta in metadata: 
+            individuals.add_row(metadata=meta)
+            if stratify in meta:  # recode as integer
+                population = meta[stratify] 
+                if not population in population_map:
+                    population_map[population] = len(population_map)
+                    populations.add_row(metadata={"name": population})
+                population = population_map[population]
         ploidy = num_samples / individuals.num_rows
         assert ploidy == 1.0 or ploidy == 2.0
         for i in range(num_samples):
@@ -62,11 +66,11 @@ for i, (params_file, recomb_file) in enumerate(files):
                 individual=i // int(ploidy),
             )
     min_time = 0
-    for t in node_time:
+    for t in node_time:  # NB: nodes are sorted, ascending in time
         if t > 0.0:
             #TODO: assertion triggers rarely (FP error?)
             #assert t >= min_time 
-            t = max(min_time + 1e-7, t)
+            t = max(min_time + min_branch_length, t)
             nodes.add_row(time=t)
             min_time = t
 
