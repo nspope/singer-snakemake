@@ -20,13 +20,14 @@ def tag():
 
 
 def weighted_pair_coalescence_rates(
-    ts, sample_sets, indexes, windows, window_weights, 
+    ts, sample_sets, indexes, windows, prop_accessible=None, 
     num_time_bins=25, log_time_bounds=[1, 7],
 ):
     """
     Calculate marginal pair coalescence rates, weighted by the proportion of
     missing data in each window and summed over windows
     """
+    if prop_accessible is None: prop_accessible = np.ones(windows.size - 1)
     max_time = ts.nodes_time.max()
     time_windows = np.logspace(*log_time_bounds, num_time_bins + 1)
     pair_coalescence_counts = ts.pair_coalescence_counts(
@@ -38,20 +39,17 @@ def weighted_pair_coalescence_rates(
         span_normalise=True,
     )
     #assert np.all(pair_coalescence_counts >= 0.0)
-    window_weights = window_weights * np.diff(windows)
-    window_weights /= np.sum(window_weights)
-    pair_coalescence_counts *= window_weights[:, np.newaxis, np.newaxis]
-    pair_coalescence_counts = np.sum(pair_coalescence_counts, axis=0)
+    weights = prop_accessible * np.diff(windows)
+    weights /= np.sum(weights)
+    counts *= weights[:, np.newaxis, np.newaxis]
+    counts = np.sum(counts, axis=0)
     # TODO: check
-    pair_coalescence_surv = np.hstack([
-        np.ones((pair_coalescence_counts.shape[0], 1)),
-        1 - np.cumsum(pair_coalescence_counts, axis=1),
-    ])
-    pair_coalescence_rates = (
-        np.log(pair_coalescence_surv[:, :-1]) - 
-        np.log(pair_coalescence_surv[:, 1:])
-    ) / np.diff(time_windows)[np.newaxis, :]
-    pair_coalescence_rates[~np.isfinite(pair_coalescence_rates)] = np.nan
+    surv = 1 - np.hstack([np.zeros((counts.shape[0], 1)), np.cumsum(counts, axis=1)])
+    rates = np.full_like(counts, np.nan)
+    for s, r in zip(surv, rates):
+
+    rates = (np.log(surv[:, :-1]) - np.log(surv[:, 1:])) / \
+        np.diff(time_windows)[np.newaxis, :]
     # /TODO
     epochs = np.tile(time_windows[:-1], (pair_coalescence_counts.shape[0], 1))
     return pair_coalescence_rates.T, pair_coalescence_counts.T, epochs.T
@@ -72,9 +70,13 @@ def simulation_test(seed, popsize, num_epochs):
     sample_sets = [list(ts.samples())]
     indexes = [(0, 0)]
     windows = np.linspace(0.0, ts.sequence_length, 2)
-    est = np.squeeze(pair_coalescence_rates(ts, sample_sets, indexes, windows, num_epochs))
+    est, *_ = \
+        weighted_pair_coalescence_rates(
+            ts, sample_sets, indexes, windows, 
+            num_intervals=num_epochs,
+        )
     print("Target coalesence rate:", 0.5 / popsize)
-    print("Estimated coalesence rate in intervals:", est)
+    print("Estimated coalesence rate in intervals:", np.squeeze(est))
     print("Relative error:", (est - 0.5 / popsize) * popsize / 2)
 
 

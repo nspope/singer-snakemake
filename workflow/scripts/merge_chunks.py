@@ -24,8 +24,10 @@ ratemap = pickle.load(open(snakemake.input.ratemap, "rb"))
 metadata = pickle.load(open(snakemake.input.metadata, "rb"))
 
 tables = tskit.TableCollection(sequence_length=ratemap.sequence_length)
-nodes, edges, individuals = tables.nodes, tables.edges, tables.individuals
+nodes, edges, individuals, populations = \
+    tables.nodes, tables.edges, tables.individuals, tables.populations
 
+population_map = {}
 num_nodes, num_samples = 0, 0
 files = zip(snakemake.input.params, snakemake.input.recombs)
 for i, (params_file, recomb_file) in enumerate(files):
@@ -40,13 +42,25 @@ for i, (params_file, recomb_file) in enumerate(files):
     node_time = np.loadtxt(node_file)
     num_nodes = nodes.num_rows - num_samples
     if individuals.num_rows == 0:
+        population = -1
         num_samples = np.sum(node_time == 0.0)
         individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
+        populations.metadata_schema = tskit.MetadataSchema.permissive_json()
         for x in metadata: individuals.add_row(metadata=x)
+        if "population" in x:  # recode as integer
+            population = x["population"] 
+            if not population in population_map:
+                population_map[population] = len(population_map)
+                populations.add_row(metadata={"name": population})
+            population = population_map[population]
         ploidy = num_samples / individuals.num_rows
         assert ploidy == 1.0 or ploidy == 2.0
         for i in range(num_samples):
-            nodes.add_row(flags=tskit.NODE_IS_SAMPLE, individual=i // int(ploidy))
+            nodes.add_row(
+                flags=tskit.NODE_IS_SAMPLE, 
+                population=population,
+                individual=i // int(ploidy),
+            )
     min_time = 0
     for t in node_time:
         if t > 0.0:
