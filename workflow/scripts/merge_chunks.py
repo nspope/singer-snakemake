@@ -5,10 +5,14 @@ Part of https://github.com/nspope/singer-snakemake.
 """
 
 import msprime
+import os
+import subprocess
 import tskit
 import pickle
 import numpy as np
 import yaml
+import json
+import tszip
 from datetime import datetime
 
 
@@ -16,6 +20,37 @@ from datetime import datetime
 
 def tag(): 
     return f"[singer-snakemake::{snakemake.rule}::{str(datetime.now())}]"
+
+
+# TODO
+# proposed:
+#   use tszip (but polegon?)
+#   use new singer binary
+#   remove singer binary path from config
+
+
+def pipeline_provenance(version_string, parameters):
+    git_dir = os.path.join(snakemake.scriptdir, os.path.pardir, os.path.pardir, ".git")
+    git_commit = subprocess.run(
+        ["git", f"--git-dir={git_dir}", "describe", "--always"],
+        capture_output=True,
+    )
+    if git_commit.returncode == 0:
+        git_commit = git_commit.stdout.strip().decode('utf-8')
+        version_string = f"{version_string}.{git_commit}"
+    return {
+        "software": {"name": "singer-snakemake", "version": version_string},
+        "parameters": snakemake.config,
+        "environment": tskit.provenance.get_environment(),
+    }
+
+
+def singer_provenance(version_string, parameters):
+    return {
+        "software": {"name": "singer", "version": version_string},
+        "parameters": parameters,
+        "environment": tskit.provenance.get_environment(),
+    }
 
 
 # --- implm --- #
@@ -30,6 +65,7 @@ tables = tskit.TableCollection(sequence_length=ratemap.sequence_length)
 nodes, edges, individuals, populations = \
     tables.nodes, tables.edges, tables.individuals, tables.populations
 
+parameters = []
 population_map = {}
 num_nodes, num_samples = 0, 0
 files = zip(snakemake.input.params, snakemake.input.recombs)
@@ -40,6 +76,7 @@ for i, (params_file, recomb_file) in enumerate(files):
     branch_file = recomb_file.replace("_recombs_", "_branches_")
     params = yaml.safe_load(open(params_file))
     block_start = params['start']
+    parameters.append(params)
 
     # nodes
     node_time = np.loadtxt(node_file)
@@ -135,8 +172,19 @@ tables.mutations.set_columns(
     derived_state_offset=mut_state_offset,
 )
 
+tables.provenances.add_row(
+    json.dumps(
+        pipeline_provenance(snakemake.params.version["pipeline"], snakemake.config)
+    )
+)
+tables.provenances.add_row(
+    json.dumps(
+        pipeline_provenance(snakemake.params.version["singer"], parameters)
+    )
+)
+
 tables.sort()
 tables.build_index()
 tables.compute_mutation_parents()
 ts = tables.tree_sequence()
-ts.dump(snakemake.output.trees)
+tszip.compress(ts, snakemake.output.trees)

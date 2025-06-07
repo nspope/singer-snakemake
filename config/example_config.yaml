@@ -12,4 +12,3 @@ mcmc-resumes: 1000 # maximum number of times to try to resume MCMC on error at a
 coalrate-epochs: 25 # number of time intervals within which to calculate coalescence rates
 stratify-by: "population" # column in metadata to stratify statistics by, or None (TODO: not implemented)
 random-seed: 1 # random seed
-singer-binary: "resources/singer-0.1.8-beta-linux-x86_64/singer" # this version is needed for "-resume" flag (TODO: automatically fetch from SINGER repo)

@@ -10,6 +10,7 @@ import pickle
 import msprime
 import numpy as np
 import tskit
+import tszip
 from collections import defaultdict
 from datetime import datetime
 
@@ -85,7 +86,7 @@ def simulation_test(seed, popsize, num_epochs):
 # --- implm --- #
 
 num_intervals = snakemake.params.coalrate_epochs
-ts = tskit.load(snakemake.input.trees)
+ts = tszip.decompress(snakemake.input.trees)
 ratemap = pickle.load(open(snakemake.input.ratemap, "rb"))
 
 # global pair coalescence rates

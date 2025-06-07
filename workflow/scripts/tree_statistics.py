@@ -6,6 +6,7 @@ Part of https://github.com/nspope/singer-snakemake.
 
 import msprime
 import tskit
+import tszip
 import pickle
 import numpy as np
 import yaml
@@ -21,7 +22,7 @@ def tag():
 # --- implm --- #
 
 ratemap = pickle.load(open(snakemake.input.ratemap, "rb"))
-ts = tskit.load(snakemake.input.trees)
+ts = tszip.decompress(snakemake.input.trees)
 mutation_rate = snakemake.params.mutation_rate
 
 diversity = \

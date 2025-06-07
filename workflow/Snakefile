@@ -16,12 +16,16 @@ import pickle
 import subprocess
 from datetime import datetime
 
+
 def tag(step): 
     return f"[singer-snakemake::{step}::{str(datetime.now())}]"
 
 # ------ config ------ #
 
 configfile: "config/example_config.yaml"
+
+VERSION = "0.1.0"
+SINGER_VERSION = "0.1.8.beta.013fe1b"  # commit of included SINGER binary
 
 INPUT_DIR = config["input-dir"]
 CHUNK_SIZE = float(config["chunk-size"])
@@ -36,7 +40,10 @@ MCMC_RESUMES = int(config["mcmc-resumes"] * MCMC_SAMPLES)
 RAND_SEED = int(config["random-seed"])
 COALRATE_EPOCHS = int(config["coalrate-epochs"])
 STRATIFY_BY = None if config["stratify-by"] == "None" else config["stratify-by"]
-SINGER_BINARY = config["singer-binary"] 
+SINGER_BINARY = os.path.join(
+   workflow.basedir, os.path.pardir, "resources", 
+   "singer-0.1.8-beta-linux-x86_64", "singer",
+)
 
 assert MCMC_SAMPLES > 0, "Number of MCMC samples must be nonzero"
 assert MCMC_BURNIN < MCMC_SAMPLES, "Burn-in exceeds number of MCMC samples"
@@ -57,7 +64,7 @@ rule all:
         expand("results/{chrom}/plots/pair-coalescence-rates.png", chrom=CHROMOSOMES),
         expand("results/{chrom}/plots/cross-coalescence-pdf.png", chrom=CHROMOSOMES),
         expand("results/{chrom}/plots/cross-coalescence-rates.png", chrom=CHROMOSOMES),
-        expand("results/{chrom}/trees/{chrom}.{rep}.trees", chrom=CHROMOSOMES, rep=range(MCMC_SAMPLES)),
+        expand("results/{chrom}/trees/{chrom}.{rep}.tsz", chrom=CHROMOSOMES, rep=range(MCMC_SAMPLES)),
 
 
 checkpoint chunk_chromosomes:
@@ -139,9 +146,10 @@ rule merge_chunks:
         params = merge_chunks_params,
         recombs = lambda w: merge_chunks_input(w, "recombs")
     output:
-        trees = "results/{chrom}/trees/{chrom}.{rep}.trees"
+        trees = "results/{chrom}/trees/{chrom}.{rep}.tsz"
     params:
         stratify = STRATIFY_BY,
+        version = {"pipeline": VERSION, "singer": SINGER_VERSION},
     script:
         "scripts/merge_chunks.py"
 
