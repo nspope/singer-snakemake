@@ -22,13 +22,6 @@ def tag():
     return f"[singer-snakemake::{snakemake.rule}::{str(datetime.now())}]"
 
 
-# TODO
-# proposed:
-#   use tszip (but polegon?)
-#   use new singer binary
-#   remove singer binary path from config
-
-
 def pipeline_provenance(version_string, parameters):
     git_dir = os.path.join(snakemake.scriptdir, os.path.pardir, os.path.pardir, ".git")
     git_commit = subprocess.run(
@@ -179,7 +172,7 @@ tables.provenances.add_row(
 )
 tables.provenances.add_row(
     json.dumps(
-        pipeline_provenance(snakemake.params.version["singer"], parameters)
+        singer_provenance(snakemake.params.version["singer"], parameters)
     )
 )
 

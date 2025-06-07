@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import itertools
 import tskit
+import os
 from datetime import datetime
 
 # --- lib --- #
@@ -82,12 +83,13 @@ if snakemake.params.stratify is not None:
                 else:
                     axs[j, k].set_visible(False)
         fig.supxlabel("Generations in the past")
+        out_dir = os.path.dirname(snakemake.output.pair_coalescence_rates)
         if what == "rates":
             fig.supylabel("Pair coalescence rate")
-            plt.savefig(snakemake.output.cross_coalescence_rates)
+            plt.savefig(os.path.join(out_dir, "cross-coalescence-rates.png"))
         elif what == "pdf":
             fig.supylabel("Proportion coalescencing pairs")
-            plt.savefig(snakemake.output.cross_coalescence_pdf)
+            plt.savefig(os.path.join(out_dir, "cross-coalescence-pdf.png"))
         plt.clf()
 
 
