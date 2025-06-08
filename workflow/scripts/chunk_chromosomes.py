@@ -82,7 +82,8 @@ meta_file = vcf_file.replace(".vcf.gz", ".meta.csv")
 if not os.path.exists(meta_file):
     logfile.write(f"{tag()} Did not find {meta_file}, inserting sample names into metadata\n")
     metadata = [{"id":name} for name in vcf["samples"]]
-    assert stratify is None, f"\"{meta_file}\" not found, cannot stratify statistics by column \"{stratify}\", use None instead"
+    assert stratify is None, \
+        f"\"{meta_file}\" not found, cannot stratify statistics by column \"{stratify}\", use None instead"
 else:
     meta_file = csv.reader(open(meta_file, "r"))
     metadata = []
@@ -92,7 +93,8 @@ else:
         metadata.append({k:v for k, v in zip(metadata_names, row)})
     assert len(metadata) == vcf["samples"].size, "Must have a metadata row for each sample"
     if stratify is not None:
-        assert stratify in metadata_names, f"Cannot stratify statistics by column \"{stratify}\" that isn't in metadata"
+        assert stratify in metadata_names, \
+            f"Cannot stratify statistics by column \"{stratify}\" that isn't in metadata"
 
 # convert to diploid VCF if necessary
 assert vcf['calldata/GT'].shape[2] == 2
@@ -191,11 +193,15 @@ logfile.write(f"{tag()} Using ballpark Ne estimate of {Ne}\n")
 # plot site density and recombination rate as sanity check
 fig, axs = plt.subplots(3, 1, figsize=(8, 8), sharex=True)
 col = ['black' if x else 'red' for x in filter]
-axs[0].scatter(windows[:-1], prop_missing, s=4, c=col)
+for l, r in zip(windows[:-1][~filter], windows[1:][~filter]):
+    for ax in axs: 
+        ax.axvspan(l, r, edgecolor=None, facecolor='firebrick', alpha=0.1)
+        ax.set_xlim(windows[0], windows[-1])
+axs[0].step(windows[:-1], prop_missing, where="post", color="black")
 axs[0].set_ylabel("Proportion missing bases")
-axs[1].scatter(windows[:-1], prop_snp, s=4, c=col)
+axs[1].step(windows[:-1], prop_snp, where="post", color="black")
 axs[1].set_ylabel("Proportion variant bases")
-axs[2].scatter(windows[:-1], rec_rate, s=4, c=col)
+axs[2].step(windows[:-1], rec_rate, where="post", color="black")
 axs[2].set_ylabel("Recombination rate")
 axs[2].set_yscale("log")
 fig.supxlabel("Position")
@@ -261,17 +267,48 @@ vcf_stats = {
 pickle.dump(vcf_stats, open(snakemake.output.vcf_stats, "wb"))
 pickle.dump(metadata, open(snakemake.output.metadata, "wb"))
 
-# stratified summary stats (TODO)
-#if stratify is not None:
-#    sample_sets = defaultdict(list)
-#    for i, md in enumerate(metadata):
-#        sample_sets[md[stratify]].append(i)
-#    stratified_counts = genotypes.count_alleles_subpop(sample_sets)
-#    stratified_diversity = {}
-#    stratified_tajima_d = {}
-#    stratified_folded_afs = {}
-#    stratified_unfolded_afs = {}
-#    for nm, cnt in stratified_counts.items():
-#        stratified_diversity[nm] = allel.windowed_diversity(...)
-#        stratified_tajima_d[nm] = allel.windowed_tajima_d(...)
-#    raise ValueError("Not implemented yet")
+# TODO: clean this up
+# stratified summary stats
+vcf_strata_stats = {}
+if stratify is not None:
+    sample_sets = defaultdict(list)
+    for i, md in enumerate(metadata):
+        sample_sets[md[stratify]].append(i)
+    strata = [n for n in sample_sets.keys()]
+    strata_counts = genotypes.count_alleles_subpops(sample_sets, max_allele=1)
+
+    strata_divergence = []
+    strata_folded_afs = []
+    strata_unfolded_afs = []
+    for i in range(len(strata)):
+        for j in range(i, len(strata)):
+            divergence, *_ = allel.windowed_divergence(
+                positions,
+                strata_counts[strata[i]],
+                strata_counts[strata[j]],
+                windows=np.column_stack([windows[:-1] + 1, windows[1:]]).astype(np.int64),
+                is_accessible=~bitmask,
+                fill=0.0,
+            )
+            strata_divergence.append(divergence)
+
+        folded_afs = allel.sfs_folded(
+            strata_counts[strata[i]], 
+            n=2 * len(sample_sets[strata[i]]),
+        ) / np.sum(~bitmask)
+        strata_folded_afs.append(folded_afs)
+
+        unfolded_afs = allel.sfs(
+            strata_counts[strata[i]][:, 1], 
+            n=2 * len(sample_sets[strata[i]]),
+        ) / np.sum(~bitmask)
+        strata_unfolded_afs.append(unfolded_afs)
+
+    strata_divergence = np.stack(strata_divergence).T
+    vcf_strata_stats = {
+        "strata": strata,
+        "divergence": strata_divergence,
+        "folded_afs": strata_folded_afs,
+        "unfolded_afs": strata_unfolded_afs,
+    }
+pickle.dump(vcf_strata_stats, open(snakemake.output.vcf_strata_stats, "wb"))

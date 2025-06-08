@@ -75,6 +75,7 @@ checkpoint chunk_chromosomes:
         site_density = "results/{chrom}/plots/site_density.png",
         chunks = directory("results/{chrom}/chunks"),
         vcf_stats = "results/{chrom}/{chrom}.vcf.stats.p",
+        vcf_strata_stats = "results/{chrom}/{chrom}.vcf.strata_stats.p",
         ratemap = "results/{chrom}/{chrom}.adjusted_mu.p",
         metadata = "results/{chrom}/{chrom}.vcf.samples.p",
     log:
@@ -167,9 +168,10 @@ rule tree_statistics:
     """
     input:
         ratemap = rules.chunk_chromosomes.output.ratemap,
-        trees = rules.merge_chunks.output.trees
+        trees = rules.merge_chunks.output.trees,
     output:
-        stats = "results/{chrom}/stats/{chrom}.{rep,[0-9]+}.stats.p"
+        stats = "results/{chrom}/stats/{chrom}.{rep,[0-9]+}.stats.p",
+        strata_stats = "results/{chrom}/stats/{chrom}.{rep,[0-9]+}.strata_stats.p",
     params:
         mutation_rate = MUTATION_RATE,
         stratify = STRATIFY_BY,
@@ -177,10 +179,10 @@ rule tree_statistics:
         "scripts/tree_statistics.py"
 
 
-def diagnostics_input(wildcards):
+def diagnostics_input(wildcards, regex):
     dir = f"results/{wildcards.chrom}/stats"
     out = expand(
-        os.path.join(dir, "{chrom}.{rep}.stats.p"),
+        os.path.join(dir, f"{{chrom}}.{{rep}}.{regex}.p"),
         chrom=wildcards.chrom,
         rep=range(MCMC_SAMPLES),
     )
@@ -200,7 +202,9 @@ rule diagnostics:
     input:
         ratemap = rules.chunk_chromosomes.output.ratemap,
         vcf_stats = rules.chunk_chromosomes.output.vcf_stats,
-        stats = diagnostics_input,
+        vcf_strata_stats = rules.chunk_chromosomes.output.vcf_strata_stats,
+        stats = lambda w: diagnostics_input(w, "stats"),
+        strata_stats = lambda w: diagnostics_input(w, "strata_stats"),
     output:
         diversity_scatter = "results/{chrom}/plots/diversity-scatter.png",
         diversity_trace = "results/{chrom}/plots/diversity-trace.png",
@@ -214,6 +218,7 @@ rule diagnostics:
         mcmc_samples = MCMC_SAMPLES,
         mcmc_burnin = MCMC_BURNIN,
         confidence_level = 0.0,
+        stratify = STRATIFY_BY,
     script:
         "scripts/diagnostics.py"
 
