@@ -13,6 +13,8 @@ import msprime
 import warnings
 from datetime import datetime
 
+warnings.simplefilter('ignore')
+
 
 # --- lib --- #
 
@@ -21,8 +23,6 @@ def tag():
 
 
 # --- implm --- #
-
-warnings.simplefilter('ignore')
 
 # statistics from VCF
 ratemap = pickle.load(open(snakemake.input.ratemap, "rb"))
@@ -194,7 +194,7 @@ if snakemake.params.stratify is not None:
         np.mean(x[..., num_burnin:], axis=-1) for x in branch_strata_unfolded_afs
     ]
 
-    # plot divergence
+    # plot chunk divergence
     strata_divergence_scatter = os.path.join(
         os.path.dirname(snakemake.output.diversity_scatter), 
         "strata-divergence-scatter.png",
@@ -215,13 +215,41 @@ if snakemake.params.stratify is not None:
                 )
                 x = np.nanmean(site_strata_divergence[:, k])
                 axs[i, j].axline((x, x), slope=1, color='black', linestyle="dashed")
-                axs[i, j].set_title(f"{p} - {q}", loc="left", size=12)
+                axs[i, j].set_title(f"{p} vs {q}", loc="left", size=12)
                 k += 1
             else:
                 axs[i, j].set_visible(False)
     fig.supxlabel("Site (VCF) divergence per chunk")
     fig.supylabel("E[divergence] per chunk")
     plt.savefig(strata_divergence_scatter)
+    plt.clf()
+
+    # plot divergence trace
+    strata_divergence_trace = os.path.join(
+        os.path.dirname(snakemake.output.diversity_trace), 
+        "strata-divergence-trace.png",
+    )
+    fig, axs = plt.subplots(
+        len(strata), len(strata), 
+        figsize=(len(strata) * 4, len(strata) * 3.5),
+        constrained_layout=True, squeeze=False,
+    )
+    k = 0
+    for i, p in enumerate(strata):
+        for j, q in enumerate(strata):
+            if j >= i:
+                axs[i, j].plot(
+                    np.arange(branch_strata_divergence.shape[-1]), 
+                    np.nanmean(branch_strata_divergence[:, k], axis=0), 
+                    "-", c='firebrick',
+                )
+                axs[i, j].set_title(f"{p} vs {q}", loc="left", size=12)
+                k += 1
+            else:
+                axs[i, j].set_visible(False)
+    fig.supxlabel("MCMC iteration")
+    fig.supylabel("E[divergence]")
+    plt.savefig(strata_divergence_trace)
     plt.clf()
 
     # plot folded afs across strata

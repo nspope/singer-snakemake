@@ -12,8 +12,12 @@ import allel
 import matplotlib.pyplot as plt
 import yaml
 import pickle
+import warnings
 from collections import defaultdict
 from datetime import datetime
+
+warnings.simplefilter('ignore')
+
 
 # --- lib --- #
 
@@ -221,17 +225,17 @@ for i in np.flatnonzero(filter):
     polar = 0.99 if snakemake.params.polarised else 0.5
     id = f"{i:>06}"
     chunk_params = {
-        "thin" : int(snakemake.params.mcmc_thin), 
-        "n" : int(snakemake.params.mcmc_samples),
-        "Ne" : float(Ne),
-        "m" : float(adj_mu[i]), 
-        "input" : str(vcf_prefix), 
-        "start" : int(start), 
-        "end" : int(end), 
-        "polar" : float(polar),
-        "r" : float(rec_rate[i]), 
-        "seed" : int(seeds[i]),
-        "output" : str(f"{chunks_dir}/{id}"),
+        "thin": int(snakemake.params.mcmc_thin), 
+        "n": int(snakemake.params.mcmc_samples),
+        "Ne": float(Ne),
+        "m": float(adj_mu[i]), 
+        "input": str(vcf_prefix), 
+        "start": int(start), 
+        "end": int(end), 
+        "polar": float(polar),
+        "r": float(rec_rate[i]), 
+        "seed": int(seeds[i]),
+        "output": str(f"{chunks_dir}/{id}"),
     }
     chunk_path = f"{chunks_dir}/{id}.yaml"
     yaml.dump(chunk_params, open(chunk_path, "w"), default_flow_style=False)
@@ -259,10 +263,10 @@ write_minimal_vcf(
 diversity[~filter] = np.nan
 tajima_d[~filter] = np.nan
 vcf_stats = {
-    "diversity" : diversity, 
-    "tajima_d" : tajima_d, 
-    "folded_afs" : folded_afs, 
-    "unfolded_afs" : unfolded_afs,
+    "diversity": diversity, 
+    "tajima_d": tajima_d, 
+    "folded_afs": folded_afs, 
+    "unfolded_afs": unfolded_afs,
 }
 pickle.dump(vcf_stats, open(snakemake.output.vcf_stats, "wb"))
 pickle.dump(metadata, open(snakemake.output.metadata, "wb"))

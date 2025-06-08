@@ -11,9 +11,13 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import itertools
+import warnings
 import tskit
 import os
 from datetime import datetime
+
+warnings.simplefilter('ignore')
+
 
 # --- lib --- #
 
