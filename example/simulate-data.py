@@ -73,7 +73,7 @@ remaining_sites = remaining_sites[remaining_sites > ts.sequence_length / 2]
 sitemask = np.sort(
     np.random.choice(
         remaining_sites.astype(np.int64) + 1,
-        size=int(0.1 * remaining_sites.size),
+        size=int(0.3 * remaining_sites.size),
         replace=False,
     )
 )

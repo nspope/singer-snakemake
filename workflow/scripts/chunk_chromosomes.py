@@ -291,6 +291,9 @@ logfile.write(
 num_accessible[~filter_chunks] = 0
 num_retained[~filter_chunks] = 0
 num_filtered[~filter_chunks] = 0
+prop_inaccessible[~filter_chunks] = 1.0
+prop_filtered[~filter_chunks] = 0.0
+prop_segregating[~filter_chunks] = 0.0
 assert num_bases.sum() == bitmask.size
 assert num_accessible.sum() == np.sum(~bitmask)
 assert num_filtered.sum() == filtered_positions.size
@@ -374,12 +377,23 @@ for i in np.flatnonzero(filter_chunks):
     logfile.write(f"{tag()} Parameters for chunk {id} are {chunk_params}\n")
 
 
-# dump adjusted mutation rates and chunk coordinates
-ratemap = msprime.RateMap(
+# dump adjusted mutation rates, proportion accessible, and chunk coordinates
+adjusted_mu = msprime.RateMap(
     position=windows, 
     rate=np.array(adj_mu),
 )
-pickle.dump(ratemap, open(snakemake.output.ratemap, "wb"))
+pickle.dump(adjusted_mu, open(snakemake.output.adjusted_mu, "wb"))
+inaccessible = msprime.RateMap(
+    position=windows, 
+    rate=np.array(prop_inaccessible),
+)
+pickle.dump(inaccessible, open(snakemake.output.inaccessible, "wb"))
+filtered = msprime.RateMap(
+    position=windows, 
+    rate=np.array(prop_filtered),
+)
+pickle.dump(filtered, open(snakemake.output.filtered, "wb"))
+
 
 
 # dump filtered vcf

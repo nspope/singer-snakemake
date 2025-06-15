@@ -85,18 +85,24 @@ def simulation_test(seed, popsize, num_epochs):
 
 # --- implm --- #
 
+# TODO: check weights for statistics calculations
+# these are now wrong. we should only multiply each window
+# by the length of accessible sequence / sum of lengths
+
 num_intervals = snakemake.params.coalrate_epochs
+inaccessible = pickle.load(open(snakemake.input.inaccessible, "rb"))
+chunk_size = np.diff(inaccessible.position)
 ts = tszip.decompress(snakemake.input.trees)
-ratemap = pickle.load(open(snakemake.input.ratemap, "rb"))
+
 
 # global pair coalescence rates
 sample_sets = [list(ts.samples())]
 indexes = [(0, 0)]
-windows = ratemap.position
-weights = ratemap.rate # proportion missing times mutation rate
+windows = inaccessible.position
 rates, pdf, breaks = weighted_pair_coalescence_rates(
     ts, sample_sets, indexes, windows, 
-    weights, num_time_bins=num_intervals,
+    prop_accessible=1 - inaccessible.rate, 
+    num_time_bins=num_intervals,
 )
 output = {
     "rates" : np.squeeze(rates), 
@@ -104,6 +110,7 @@ output = {
     "breaks" : np.squeeze(breaks),
 }
 pickle.dump(output, open(snakemake.output.coalrate, "wb"))
+
 
 # stratified global pair coalescence rates (cross-coalescence)
 output = {}
@@ -122,7 +129,8 @@ if snakemake.params.stratify is not None:
         rates, pdf, breaks = \
             weighted_pair_coalescence_rates(
                 ts, sample_sets, indexes, windows, 
-                weights, num_time_bins=num_intervals,
+                prop_accessible=1 - inaccessible.rate, 
+                num_time_bins=num_intervals,
             )
         cross_rates[i] = rates
         cross_pdf[i] = pdf

@@ -76,7 +76,9 @@ checkpoint chunk_chromosomes:
         chunks = directory("results/{chrom}/chunks"),
         vcf_stats = "results/{chrom}/{chrom}.vcf.stats.p",
         vcf_strata_stats = "results/{chrom}/{chrom}.vcf.strata_stats.p",
-        ratemap = "results/{chrom}/{chrom}.adjusted_mu.p",
+        adjusted_mu = "results/{chrom}/{chrom}.adjusted_mu.p",
+        inaccessible = "results/{chrom}/{chrom}.inaccessible.p",
+        filtered = "results/{chrom}/{chrom}.filtered.p",
         metadata = "results/{chrom}/{chrom}.vcf.samples.p",
     log:
         log = "results/{chrom}/{chrom}.log",
@@ -141,7 +143,7 @@ rule merge_chunks:
     Sets mutations.parent (https://github.com/popgenmethods/SINGER/issues/11)
     """
     input:
-        ratemap = rules.chunk_chromosomes.output.ratemap, 
+        ratemap = rules.chunk_chromosomes.output.adjusted_mu, 
         metadata = rules.chunk_chromosomes.output.metadata,
         params = merge_chunks_params,
         recombs = lambda w: merge_chunks_input(w, "recombs"),
@@ -167,7 +169,8 @@ rule tree_statistics:
     - coalescence rates
     """
     input:
-        ratemap = rules.chunk_chromosomes.output.ratemap,
+        inaccessible = rules.chunk_chromosomes.output.inaccessible,
+        filtered = rules.chunk_chromosomes.output.filtered,
         trees = rules.merge_chunks.output.trees,
     output:
         stats = "results/{chrom}/stats/{chrom}.{rep,[0-9]+}.stats.p",
@@ -200,7 +203,7 @@ rule diagnostics:
     - site allele frequency spectrum vs branch allele frequency spectrum (folded and unfolded)
     """
     input:
-        ratemap = rules.chunk_chromosomes.output.ratemap,
+        ratemap = rules.chunk_chromosomes.output.adjusted_mu,
         vcf_stats = rules.chunk_chromosomes.output.vcf_stats,
         vcf_strata_stats = rules.chunk_chromosomes.output.vcf_strata_stats,
         stats = lambda w: diagnostics_input(w, "stats"),
@@ -235,7 +238,7 @@ rule coalescence_rates:
     Rates are calculated within logarithmically-spaced time bins.
     """
     input:
-        ratemap = rules.chunk_chromosomes.output.ratemap,
+        inaccessible = rules.chunk_chromosomes.output.inaccessible,
         trees = rules.merge_chunks.output.trees
     output:
         coalrate = "results/{chrom}/stats/{chrom}.{rep,[0-9]+}.coalrate.p",
@@ -262,7 +265,7 @@ rule plot_coalescence_rates:
     Plot distributions of pair coalescence times.
     """
     input:
-        ratemap = rules.chunk_chromosomes.output.ratemap,
+        ratemap = rules.chunk_chromosomes.output.adjusted_mu,
         coalrate = lambda w: plot_coalescence_rates_input(w, "coalrate"),
         crossrate = lambda w: plot_coalescence_rates_input(w, "crossrate"),
     output:
