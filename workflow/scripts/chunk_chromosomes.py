@@ -55,6 +55,8 @@ stratify = snakemake.params.stratify
 
 vcf_file = snakemake.input.vcf
 vcf = allel.read_vcf(vcf_file)
+logfile.write(f"{tag()} Read {vcf['variants/POS'].size} variants and {vcf['samples'].size} samples from {vcf_file}\n")
+
 
 # recombination map
 hapmap_file = vcf_file.replace(".vcf.gz", ".hapmap")
@@ -62,15 +64,18 @@ recombination_rate = snakemake.params.recombination_rate
 if not os.path.exists(hapmap_file):
     logfile.write(
         f"{tag()} Did not find {hapmap_file}, using default recombination "
-        f"rate of {recombination_rate}\n")
+        f"rate of {recombination_rate}\n"
+    )
     hapmap = msprime.RateMap(
         position=np.array([0.0, np.max(vcf['variants/POS']) + 1.0]),
         rate=np.array([recombination_rate]),
     )
 else:
     hapmap = msprime.RateMap.read_hapmap(hapmap_file)
+    logfile.write(f"{tag()} Read {hapmap.rate.size} recombination rates from {hapmap_file}\n")
 
-# missing data mask
+
+# inaccessible intervals mask (bed intervals)
 mask_file = vcf_file.replace(".vcf.gz", ".mask.bed")
 if not os.path.exists(mask_file):
     logfile.write(f"{tag()} Did not find {mask_file}, assuming the entire sequence is accessible\n")
@@ -78,8 +83,24 @@ if not os.path.exists(mask_file):
 else:
     bedmask = np.loadtxt(mask_file, usecols=[1, 2]).astype(np.int64)
     assert np.max(bedmask) <= hapmap.sequence_length, "Mask position exceeds hapmap length"
+    logfile.write(f"{tag()} Read {bedmask.shape[0]} inaccessible intervals from {mask_file}\n")
 bitmask = np.full(int(hapmap.sequence_length), False)
 for (a, b) in bedmask: bitmask[a:b] = True
+
+
+# filtered sites mask (list of 1-based positions)
+filter_file = vcf_file.replace(".vcf.gz", ".filter.txt")
+if not os.path.exists(mask_file):
+    logfile.write(f"{tag()} Did not find {filter_file}, will not adjust mutation rate for filtered SNPs\n")
+    filtered_positions = np.empty(0, dtype=np.int64)
+else:
+    filtered_positions = np.loadtxt(filter_file).astype(np.int64)
+    assert np.max(filtered_positions) <= hapmap.sequence_length, "Filtered position exceeds hapmap length"
+    filtered_positions = np.unique(filtered_positions)
+    logfile.write(f"{tag()} List of filtered positions includes {filtered_positions.size} variants\n")
+sitemask = np.full(int(hapmap.sequence_length), False)
+sitemask[filtered_positions - 1] = True
+
 
 # metadata
 meta_file = vcf_file.replace(".vcf.gz", ".meta.csv")
@@ -87,7 +108,8 @@ if not os.path.exists(meta_file):
     logfile.write(f"{tag()} Did not find {meta_file}, inserting sample names into metadata\n")
     metadata = [{"id":name} for name in vcf["samples"]]
     assert stratify is None, \
-        f"\"{meta_file}\" not found, cannot stratify statistics by column \"{stratify}\", use None instead"
+        f"'{meta_file}' not found, cannot stratify statistics or sample nodes " \
+        f"by column '{stratify}', set to None in configfile"
 else:
     meta_file = csv.reader(open(meta_file, "r"))
     metadata = []
@@ -98,7 +120,9 @@ else:
     assert len(metadata) == vcf["samples"].size, "Must have a metadata row for each sample"
     if stratify is not None:
         assert stratify in metadata_names, \
-            f"Cannot stratify statistics by column \"{stratify}\" that isn't in metadata"
+            f"Cannot stratify statistics or sample nodes by column " \
+            f"'{stratify}' that isn't in the metadata"
+
 
 # convert to diploid VCF if necessary
 assert vcf['calldata/GT'].shape[2] == 2
@@ -113,115 +137,223 @@ genotypes = allel.GenotypeArray(vcf['calldata/GT'])
 positions = vcf['variants/POS']
 assert np.max(positions) <= hapmap.sequence_length, "VCF position exceeds hapmap length"
 
-# filter variants to biallelic, nonmasked
-counts = genotypes.count_alleles()
-filter_biallelic = np.logical_and(counts.is_segregating(), counts.is_biallelic())
-logfile.write(f"{tag()} Removed {np.sum(~filter_biallelic)} non-biallelic sites\n")
-filter_missing = counts.sum(axis=1) == 2 * samples.size
-logfile.write(f"{tag()} Removed {np.sum(~filter_missing)} sites with missing data\n")
-masked_sites = np.sum(bitmask[positions - 1])
-logfile.write(f"{tag()} Removed {masked_sites} sites occuring in masked regions\n")
 
-retain = np.logical_and(filter_biallelic, filter_missing)
-retain = np.logical_and(retain, ~bitmask[positions - 1])
+# NB: to adjust mutation rate to account for missing data, there are two relevant
+# types of missingness: inaccessible intervals and filtered sites. The adjustment
+# has the form,
+#
+# `adjusted_mu = mu * (filtered_intervals / sequence_length) * (filtered_sites / segregating_sites)`
+#
+# where the last term is calculated *discounting* sites that lie in filtered
+# intervals.
+
+
+# filter variants
+counts = genotypes.count_alleles()
+filter_segregating = counts.is_segregating()
+logfile.write(f"{tag()} Removed {np.sum(~filter_segregating)} non-segregating sites\n")
+filter_biallelic = counts.is_biallelic()
+logfile.write(f"{tag()} Removed {np.sum(~filter_biallelic)} non-biallelic sites\n")
+filter_nonmissing = counts.sum(axis=1) == 2 * samples.size
+logfile.write(f"{tag()} Removed {np.sum(~filter_nonmissing)} sites with missing data\n")
+filter_accessible = ~bitmask[positions - 1]
+logfile.write(f"{tag()} Removed {np.sum(~filter_accessible)} sites occuring in inaccessible intervals\n")
+filter_unmasked = ~sitemask[positions - 1]
+logfile.write(f"{tag()} Removed {np.sum(~filter_unmasked)} sites explicitly marked as filtered SNPs\n")
+retain = np.logical_and.reduce([
+    filter_segregating, 
+    filter_biallelic, 
+    filter_nonmissing, 
+    filter_accessible,
+    filter_unmasked,
+])
+
+
+# update list of filtered sites to remove inaccessible, but include
+# those that are multiallelic or contain missing data
+filtered_positions = np.concatenate([
+    filtered_positions, 
+    positions[np.logical_and(filter_segregating, ~filter_nonmissing)],
+    positions[np.logical_and(filter_segregating, ~filter_biallelic)],
+])
+filtered_positions = np.unique(filtered_positions)
+logfile.write(
+    f"{tag()} Added multiallelic and variants with missing genotypes "
+    f"to the list of filtered variants (size {filtered_positions.size})\n"
+)
+filtered_positions = filtered_positions[~bitmask[filtered_positions - 1]]
+logfile.write(
+    f"{tag()} Removed inaccessible positions from the list "
+    f"of filtered variants, left with {filtered_positions.size} variants\n"
+)
+assert np.all(~bitmask[filtered_positions - 1])
+
+
+# apply filters to genotypes, positions
 assert np.sum(retain) > 0, "No variants left after filtering"
 logfile.write(f"{tag()} Calculating statistics with remaining {np.sum(retain)} variants\n")
 genotypes, positions = genotypes[retain], positions[retain]
 counts = genotypes.count_alleles(max_allele=1)
 assert counts.shape[1] == 2
 
-# divvy chromosome into chunks and compute summary stats per chunk
+
+# divvy chromosome into chunks
 chunk_size = snakemake.params.chunk_size
 mutation_rate = snakemake.params.mutation_rate
 lower = np.min(positions) - 1 
 upper = np.max(positions) + 1 
 windows = np.linspace(lower, upper, int((upper - lower) / chunk_size) + 1)
 windows = np.unique(np.append(np.append(0, windows), hapmap.sequence_length))
+windows = windows.astype(np.int64)
 logfile.write(
     f"{tag()} Chunking chromosome into {windows.size - 1} windows "
     f"from {windows[0]} to {windows[-1]}\n"
 )
 
-# count missing bases
-*_, num_nonmissing, num_sites = allel.windowed_diversity(
-    positions,
-    counts,
-    windows=np.column_stack([windows[:-1] + 1, windows[1:]]).astype(np.int64),
-    is_accessible=~bitmask,
-    fill=0.0,
-)
 
 # average recombination rate within chunks
 rec_rate = np.diff(hapmap.get_cumulative_mass(windows)) / np.diff(windows)
 
+
+# tally filtered sequence and variants per window
+num_bases = np.diff(windows)
+num_accessible = np.array([  # total length of unmasked intervals
+    sum(~bitmask[a:b]) for a, b 
+    in zip(windows[:-1], windows[1:])
+])
+logfile.write(f"{tag()} Counted {sum(num_accessible)} accessible out of {sum(num_bases)} total bases\n")
+num_retained = np.bincount(  # sites passing all filters
+    np.digitize(positions - 1, windows) - 1,
+    minlength=windows.size - 1,
+)
+num_filtered = np.bincount(  # accessible but filtered sites
+    np.digitize(filtered_positions - 1, windows) - 1,
+    minlength=windows.size - 1,
+)
+assert num_filtered.size == num_retained.size == windows.size - 1
+logfile.write(f"{tag()} Counted {sum(num_retained)} retained and {sum(num_filtered)} filtered variants\n")
+
+
+## TODO: ultimately remove this, use calculations above
+## count missing bases
+#*_, num_nonmissing, num_sites = allel.windowed_diversity(
+#    positions,
+#    counts,
+#    windows=np.column_stack([windows[:-1] + 1, windows[1:]]),
+#    is_accessible=~bitmask,
+#    fill=0.0,
+#)
+
+
 # filter chunks with too much missingness or zero recombination rate
-num_total = np.diff(windows)
-num_missing = num_total - num_nonmissing
-prop_missing = num_missing / num_total
-prop_snp = num_sites / num_nonmissing
-prop_snp[np.isnan(prop_snp)] = 0.0
-filter = np.logical_and(prop_missing < snakemake.params.max_missing, prop_snp > 0.0)
-filter = np.logical_and(filter, rec_rate > 0.0)
+# TODO: delete
+#num_total = np.diff(windows)
+#num_missing = num_total - num_nonmissing
+#prop_missing = num_missing / num_total
+#prop_snp = num_sites / num_nonmissing
+#prop_snp[np.isnan(prop_snp)] = 0.0
+#filter_chunks = np.logical_and(prop_missing < snakemake.params.max_missing, prop_snp > 0.0)
+#filter_chunks = np.logical_and(filter_chunks, rec_rate > 0.0)
+#logfile.write(
+#    f"{tag()} Skipping {np.sum(~filter_chunks)} (of {filter_chunks.size}) "
+#    f"chunks with too much missing data or zero recombination rate\n"
+#)
+prop_inaccessible = (num_bases - num_accessible) / num_bases  #<< prop_missing
+prop_segregating = num_retained / num_accessible  #<< prop_snp
+prop_segregating[np.isnan(prop_segregating)] = 0.0
+prop_filtered = num_filtered / (num_retained + num_filtered)  #<<<new
+prop_filtered[np.isnan(prop_filtered)] = 1.0
+filter_chunks = np.logical_and.reduce([
+    prop_inaccessible < snakemake.params.max_missing, 
+    prop_filtered < snakemake.params.max_missing,
+    prop_segregating > 0.0,
+    rec_rate > 0.0,
+])
 logfile.write(
-    f"{tag()} Skipping {np.sum(~filter)} (of {filter.size}) "
+    f"{tag()} Skipping {np.sum(~filter_chunks)} (of {filter_chunks.size}) "
     f"chunks with too much missing data or zero recombination rate\n"
 )
 
-# update site mask to reflect filtered chunks
-for i in np.flatnonzero(~filter):
-    start, end = windows[i], windows[i + 1]
-    bitmask[int(start):int(end)] = True
-logfile.write(
-    f"{tag()} Updating site mask with skipped chunks, went from "
-    f"{np.sum(num_nonmissing)} to {np.sum(~bitmask)} unmasked bases\n"
-)
 
-# calculate stats and get ballpark Ne estimate
+# update site mask to reflect filtered chunks (used for global statistics calculation)
+for i in np.flatnonzero(~filter_chunks):
+    start, end = windows[i], windows[i + 1]
+    bitmask[start:end] = True
+logfile.write(
+    f"{tag()} Updating sequence mask with skipped chunks, went from "
+    f"{np.sum(num_accessible)} to {np.sum(~bitmask)} unmasked bases\n"
+)
+filtered_positions = filtered_positions[~bitmask[filtered_positions - 1]]
+logfile.write(
+    f"{tag()} Updating list of filtered positions with skipped chunks, went from "
+    f"{np.sum(num_filtered)} to {filtered_positions.size} filtered variants\n"
+)
+num_accessible[~filter_chunks] = 0
+num_retained[~filter_chunks] = 0
+num_filtered[~filter_chunks] = 0
+assert num_bases.sum() == bitmask.size
+assert num_accessible.sum() == np.sum(~bitmask)
+assert num_filtered.sum() == filtered_positions.size
+assert num_retained.sum() == positions.size == np.sum(retain)
+
+
+# calculate windowed stats and get ballpark Ne estimate from global diversity
 diversity, *_ = allel.windowed_diversity(
     positions,
     counts,
-    windows=np.column_stack([windows[:-1] + 1, windows[1:]]).astype(np.int64),
+    windows=np.column_stack([windows[:-1] + 1, windows[1:]]),
     is_accessible=~bitmask,
     fill=0.0,
 )
 tajima_d, *_ = allel.windowed_tajima_d(
     positions,
     counts,
-    windows=np.column_stack([windows[:-1] + 1, windows[1:]]).astype(np.int64),
+    windows=np.column_stack([windows[:-1] + 1, windows[1:]]),
 )
 folded_afs = allel.sfs_folded(counts, n=2 * samples.size) / np.sum(~bitmask)
 unfolded_afs = allel.sfs(counts[:, 1], n=2 * samples.size) / np.sum(~bitmask)
-Ne = 0.25 * allel.sequence_diversity(positions, counts, is_accessible=~bitmask) / mutation_rate
-logfile.write(f"{tag()} Using ballpark Ne estimate of {Ne}\n")
+adjustment = sum(num_retained) / sum(num_retained + num_filtered)
+Ne = (
+    allel.sequence_diversity(positions, counts, is_accessible=~bitmask) *
+    1 / (4 * mutation_rate * adjustment)
+)
+logfile.write(
+    f"{tag()} Using ballpark Ne estimate of {Ne} after scaling mutation "
+    f"rate by factor of {adjustment:.3f} to account for filtered sites\n"
+)
+
 
 # plot site density and recombination rate as sanity check
-fig, axs = plt.subplots(3, 1, figsize=(8, 8), sharex=True)
-col = ['black' if x else 'red' for x in filter]
-for l, r in zip(windows[:-1][~filter], windows[1:][~filter]):
+fig, axs = plt.subplots(4, 1, figsize=(8, 9), sharex=True)
+col = ['black' if x else 'red' for x in filter_chunks]
+for l, r in zip(windows[:-1][~filter_chunks], windows[1:][~filter_chunks]):
     for ax in axs: 
         ax.axvspan(l, r, edgecolor=None, facecolor='firebrick', alpha=0.1)
         ax.set_xlim(windows[0], windows[-1])
-axs[0].step(windows[:-1], prop_missing, where="post", color="black")
-axs[0].set_ylabel("Proportion missing bases")
-axs[1].step(windows[:-1], prop_snp, where="post", color="black")
+axs[0].step(windows[:-1], prop_inaccessible, where="post", color="black")
+axs[0].set_ylabel("Proportion inaccessible")
+axs[1].step(windows[:-1], prop_segregating, where="post", color="black")
 axs[1].set_ylabel("Proportion variant bases")
-axs[2].step(windows[:-1], rec_rate, where="post", color="black")
-axs[2].set_ylabel("Recombination rate")
-axs[2].set_yscale("log")
+axs[2].step(windows[:-1], prop_filtered, where="post", color="black")
+axs[2].set_ylabel("Proportion filtered")
+axs[3].step(windows[:-1], rec_rate, where="post", color="black")
+axs[3].set_ylabel("Recombination rate")
+axs[3].set_yscale("log")
 fig.supxlabel("Position")
 fig.tight_layout()
 plt.savefig(snakemake.output.site_density)
 plt.clf()
 
+
 # adjust mutation rate to account for missing data in each chunk
 chunks_dir = snakemake.output.chunks
 os.makedirs(f"{chunks_dir}")
-seeds = np.random.randint(0, 2**10, size=filter.size)
+seeds = np.random.randint(0, 2**10, size=filter_chunks.size)
 vcf_prefix = snakemake.output.vcf.removesuffix(".vcf")
 adj_mu = np.zeros(windows.size - 1)
-for i in np.flatnonzero(filter):
+for i in np.flatnonzero(filter_chunks):
     start, end = windows[i], windows[i + 1]
-    adj_mu[i] = (1 - prop_missing[i]) * mutation_rate
+    adj_mu[i] = (1 - prop_inaccessible[i]) * (1 - prop_filtered[i]) * mutation_rate
     polar = 0.99 if snakemake.params.polarised else 0.5
     id = f"{i:>06}"
     chunk_params = {
@@ -239,6 +371,8 @@ for i in np.flatnonzero(filter):
     }
     chunk_path = f"{chunks_dir}/{id}.yaml"
     yaml.dump(chunk_params, open(chunk_path, "w"), default_flow_style=False)
+    logfile.write(f"{tag()} Parameters for chunk {id} are {chunk_params}\n")
+
 
 # dump adjusted mutation rates and chunk coordinates
 ratemap = msprime.RateMap(
@@ -246,6 +380,7 @@ ratemap = msprime.RateMap(
     rate=np.array(adj_mu),
 )
 pickle.dump(ratemap, open(snakemake.output.ratemap, "wb"))
+
 
 # dump filtered vcf
 write_minimal_vcf(
@@ -259,9 +394,10 @@ write_minimal_vcf(
     vcf['calldata/GT'][retain],
 )
 
+
 # dump statistics
-diversity[~filter] = np.nan
-tajima_d[~filter] = np.nan
+diversity[~filter_chunks] = np.nan
+tajima_d[~filter_chunks] = np.nan
 vcf_stats = {
     "diversity": diversity, 
     "tajima_d": tajima_d, 
@@ -270,6 +406,7 @@ vcf_stats = {
 }
 pickle.dump(vcf_stats, open(snakemake.output.vcf_stats, "wb"))
 pickle.dump(metadata, open(snakemake.output.metadata, "wb"))
+
 
 # TODO: clean this up
 # stratified summary stats
@@ -290,7 +427,7 @@ if stratify is not None:
                 positions,
                 strata_counts[strata[i]],
                 strata_counts[strata[j]],
-                windows=np.column_stack([windows[:-1] + 1, windows[1:]]).astype(np.int64),
+                windows=np.column_stack([windows[:-1] + 1, windows[1:]]),
                 is_accessible=~bitmask,
                 fill=0.0,
             )

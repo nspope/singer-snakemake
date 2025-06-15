@@ -15,11 +15,13 @@ parser.add_argument("--samples", default=10, type=int)
 parser.add_argument("--disable-mask", action="store_true")
 parser.add_argument("--disable-hapmap", action="store_true")
 parser.add_argument("--disable-meta", action="store_true")
+parser.add_argument("--disable-filter", action="store_true")
 parser.add_argument("--haploid", action="store_true")
 parser.add_argument("--output-prefix", default="example", type=str)
 args = parser.parse_args()
 
 np.random.seed(args.seed)
+
 
 # linearly increasing recombination rate
 recmap_pos = np.linspace(0, args.sequence_length, 1001)
@@ -43,6 +45,7 @@ ts = msprime.sim_ancestry(
 )
 ts = msprime.sim_mutations(ts, rate=args.mutation_rate, random_seed=args.seed)
 
+
 # sporadic missing data with large missing segment in center
 bedmask = []
 sequence_length = ts.sequence_length
@@ -63,14 +66,22 @@ bedmask = np.array(bedmask)
 bitmask = np.full(int(recmap.sequence_length) + 1, False)
 for a, b in bedmask: bitmask[a:b] = True
 
-# pipeline now masks sites
-#if not args.disable_mask:
-#    mask_sites = np.flatnonzero(bitmask[ts.sites_position.astype(np.int64)])
-#    ts = ts.delete_sites(mask_sites)
 
+# sporadic filtered snps in latter half of chunks
+remaining_sites = ts.sites_position[~bitmask[ts.sites_position.astype(np.int64)]]
+remaining_sites = remaining_sites[remaining_sites > ts.sequence_length / 2]
+sitemask = np.sort(
+    np.random.choice(
+        remaining_sites.astype(np.int64) + 1,
+        size=int(0.1 * remaining_sites.size),
+        replace=False,
+    )
+)
+
+
+# write out VCF
 population_names = np.concatenate([np.repeat(s.population, s.num_samples) for s in samples])
 individual_names = [f"Sample{i:03d}" for i in range(population_names.size)]
-
 ts.write_vcf(
     gzip.open(f"{args.output_prefix}.vcf.gz", "wt"), 
     position_transform=lambda x: np.array(x, dtype=np.int64) + 1, 
@@ -111,3 +122,11 @@ if not args.disable_meta:
     for i, row in enumerate(meta_check):
         assert row[0] == individual_names[i]
         assert row[1] == population_names[i]
+
+if not args.disable_filter:
+    with open(f"{args.output_prefix}.filter.txt", "w") as filterfile:
+        for pos in sitemask: 
+            filterfile.write(f"{int(pos)}\n")
+    filter_check = np.loadtxt(f"{args.output_prefix}.filter.txt")
+    assert np.allclose(filter_check, sitemask)
+
