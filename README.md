@@ -78,7 +78,17 @@ mutation_rate[chunk] = (
 )
 ``` 
 where the last term is calculated considering only those variants in accessible
-intervals.
+intervals. 
+
+This sort of crude adjustment works best when bases/variants are missing
+completely at random (e.g. not too clustered along the sequence). For instance,
+the figure below compares the average mutation ages between the true ARG (for
+the data in `example/*`), and inferred ARGs where: (A) there is
+no missing data; (B) around 60% of the sequence is masked in intervals of
+average length 800bp, but the mutation rate is not adjusted; (C) the mutation
+rate is adjusted to account for missing data using the scheme above.
+
+<img src="resources/figure/missing-data-example.png" width="70%">
 
 An important consequence is that when calculating expectations of (linear) site
 statistics from branch statistics in the ARG (e.g. `mode='site'` and
@@ -98,7 +108,8 @@ weighted by the proportion of accessible sequence.
 The output files for each chromosome will be generated in `results/<chromosome_name>`:
 
   - __\<chromosome_name>.adjusted_mu.p__ : `msprime.RateMap` containing adjusted mutation rates in each chunk (see description above)
-  - __\<chromosome_name>.accessible.p__ : `msprime.RateMap` containing proportion of accessible bases in each chunk (see description above)
+  - __\<chromosome_name>.inaccessible.p__ : `msprime.RateMap` containing proportion of inaccessible bases in each chunk (see description above)
+  - __\<chromosome_name>.filtered.p__ : `msprime.RateMap` containing proportion of filtered variants in each chunk (see description above)
   - __\<chromosome_name>.vcf.stats.p__ : "observed values" for summary statistics (e.g. calculated from with `scikit-allel`)
   - __\<chromosome_name>.vcf__ : filtered VCF used as input to SINGER
   - __chunks/*__ the raw SINGER output and logs
@@ -117,8 +128,17 @@ The output files for each chromosome will be generated in `results/<chromosome_n
 
 ### Sanity checking
 
-To check that the timescale is correctly calibrated on synthetic data, it can
-be useful to compare the simulated (true) ARG to that inferred by SINGER. The
-helper script `resources/scripts/compare-vs-simulation.py` generates some
-visual comparisons; these include distributions of pair coalescence times, root
-heights, and mutation ages of different frequencies between the two ARGs.
+To check that the timescale is correctly calibrated on synthetic data given
+some missing data, it can be useful to compare the simulated (true) ARG to that
+inferred by SINGER. The script `resources/scripts/compare-vs-simulation.py`
+generates some visual comparisons; these include distributions of pair
+coalescence times, root heights, and mutation ages of different frequencies
+between the two ARGs. E.g.  after running the example workflow,
+
+```bash
+python resources/scripts/compare-vs-simulation.py \
+  --true-arg "example/example.tsz" \
+  --inferred-arg "results/example/trees/example.99.tsz" \
+  --inaccessible-ratemap "results/example/example.inaccessible.p" \
+  --output-dir "results/example/sanity-checks"
+```

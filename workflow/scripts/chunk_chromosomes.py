@@ -90,7 +90,7 @@ for (a, b) in bedmask: bitmask[a:b] = True
 
 # filtered sites mask (list of 1-based positions)
 filter_file = vcf_file.replace(".vcf.gz", ".filter.txt")
-if not os.path.exists(mask_file):
+if not os.path.exists(filter_file):
     logfile.write(f"{tag()} Did not find {filter_file}, will not adjust mutation rate for filtered SNPs\n")
     filtered_positions = np.empty(0, dtype=np.int64)
 else:
@@ -192,9 +192,8 @@ assert np.all(~bitmask[filtered_positions - 1])
 # apply filters to genotypes, positions
 assert np.sum(retain) > 0, "No variants left after filtering"
 logfile.write(f"{tag()} Calculating statistics with remaining {np.sum(retain)} variants\n")
+all_positions = positions.copy()
 genotypes, positions = genotypes[retain], positions[retain]
-counts = genotypes.count_alleles(max_allele=1)
-assert counts.shape[1] == 2
 
 
 # divvy chromosome into chunks
@@ -234,30 +233,7 @@ assert num_filtered.size == num_retained.size == windows.size - 1
 logfile.write(f"{tag()} Counted {sum(num_retained)} retained and {sum(num_filtered)} filtered variants\n")
 
 
-## TODO: ultimately remove this, use calculations above
-## count missing bases
-#*_, num_nonmissing, num_sites = allel.windowed_diversity(
-#    positions,
-#    counts,
-#    windows=np.column_stack([windows[:-1] + 1, windows[1:]]),
-#    is_accessible=~bitmask,
-#    fill=0.0,
-#)
-
-
 # filter chunks with too much missingness or zero recombination rate
-# TODO: delete
-#num_total = np.diff(windows)
-#num_missing = num_total - num_nonmissing
-#prop_missing = num_missing / num_total
-#prop_snp = num_sites / num_nonmissing
-#prop_snp[np.isnan(prop_snp)] = 0.0
-#filter_chunks = np.logical_and(prop_missing < snakemake.params.max_missing, prop_snp > 0.0)
-#filter_chunks = np.logical_and(filter_chunks, rec_rate > 0.0)
-#logfile.write(
-#    f"{tag()} Skipping {np.sum(~filter_chunks)} (of {filter_chunks.size}) "
-#    f"chunks with too much missing data or zero recombination rate\n"
-#)
 prop_inaccessible = (num_bases - num_accessible) / num_bases  #<< prop_missing
 prop_segregating = num_retained / num_accessible  #<< prop_snp
 prop_segregating[np.isnan(prop_segregating)] = 0.0
@@ -275,18 +251,48 @@ logfile.write(
 )
 
 
+# plot site density and recombination rate as sanity check,
+# filtered chunks are highlighted with red
+fig, axs = plt.subplots(4, 1, figsize=(8, 9), sharex=True)
+col = ['black' if x else 'red' for x in filter_chunks]
+for l, r in zip(windows[:-1][~filter_chunks], windows[1:][~filter_chunks]):
+    for ax in axs: 
+        ax.axvspan(l, r, edgecolor=None, facecolor='firebrick', alpha=0.1)
+        ax.set_xlim(windows[0], windows[-1])
+axs[0].step(windows[:-1], prop_inaccessible, where="post", color="black")
+axs[0].set_ylabel("Proportion inaccessible")
+axs[1].step(windows[:-1], prop_segregating, where="post", color="black")
+axs[1].set_ylabel("Proportion variant bases")
+axs[2].step(windows[:-1], prop_filtered, where="post", color="black")
+axs[2].set_ylabel("Proportion filtered")
+axs[3].step(windows[:-1], rec_rate, where="post", color="black")
+axs[3].set_ylabel("Recombination rate")
+axs[3].set_yscale("log")
+fig.supxlabel("Position")
+fig.tight_layout()
+plt.savefig(snakemake.output.site_density)
+plt.clf()
+
+
 # update site mask to reflect filtered chunks (used for global statistics calculation)
 for i in np.flatnonzero(~filter_chunks):
     start, end = windows[i], windows[i + 1]
     bitmask[start:end] = True
 logfile.write(
-    f"{tag()} Updating sequence mask with skipped chunks, went from "
+    f"{tag()} Updating sequence mask given filtered chunks, went from "
     f"{np.sum(num_accessible)} to {np.sum(~bitmask)} unmasked bases\n"
 )
 filtered_positions = filtered_positions[~bitmask[filtered_positions - 1]]
 logfile.write(
-    f"{tag()} Updating list of filtered positions with skipped chunks, went from "
+    f"{tag()} Updating list of filtered positions given filtered chunks, went from "
     f"{np.sum(num_filtered)} to {filtered_positions.size} filtered variants\n"
+)
+retain[bitmask[all_positions - 1]] = False
+genotypes = genotypes[~bitmask[positions - 1]]
+positions = positions[~bitmask[positions - 1]]
+logfile.write(
+    f"{tag()} Updating list of variant positions given filtered chunks, went from "
+    f"{np.sum(num_retained)} to {positions.size} filtered variants\n"
 )
 num_accessible[~filter_chunks] = 0
 num_retained[~filter_chunks] = 0
@@ -301,6 +307,8 @@ assert num_retained.sum() == positions.size == np.sum(retain)
 
 
 # calculate windowed stats and get ballpark Ne estimate from global diversity
+counts = genotypes.count_alleles(max_allele=1)
+assert counts.shape[1] == 2
 diversity, *_ = allel.windowed_diversity(
     positions,
     counts,
@@ -324,28 +332,6 @@ logfile.write(
     f"{tag()} Using ballpark Ne estimate of {Ne} after scaling mutation "
     f"rate by factor of {adjustment:.3f} to account for filtered sites\n"
 )
-
-
-# plot site density and recombination rate as sanity check
-fig, axs = plt.subplots(4, 1, figsize=(8, 9), sharex=True)
-col = ['black' if x else 'red' for x in filter_chunks]
-for l, r in zip(windows[:-1][~filter_chunks], windows[1:][~filter_chunks]):
-    for ax in axs: 
-        ax.axvspan(l, r, edgecolor=None, facecolor='firebrick', alpha=0.1)
-        ax.set_xlim(windows[0], windows[-1])
-axs[0].step(windows[:-1], prop_inaccessible, where="post", color="black")
-axs[0].set_ylabel("Proportion inaccessible")
-axs[1].step(windows[:-1], prop_segregating, where="post", color="black")
-axs[1].set_ylabel("Proportion variant bases")
-axs[2].step(windows[:-1], prop_filtered, where="post", color="black")
-axs[2].set_ylabel("Proportion filtered")
-axs[3].step(windows[:-1], rec_rate, where="post", color="black")
-axs[3].set_ylabel("Recombination rate")
-axs[3].set_yscale("log")
-fig.supxlabel("Position")
-fig.tight_layout()
-plt.savefig(snakemake.output.site_density)
-plt.clf()
 
 
 # adjust mutation rate to account for missing data in each chunk

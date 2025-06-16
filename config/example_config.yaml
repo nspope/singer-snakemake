@@ -1,7 +1,7 @@
 # --- example_config.yaml ---
 input-dir: "example" # directory with input files per chromosome, that are "chrom.vcf" "chrom.hapmap" "chrom.mask.bed"
 chunk-size: 1e6 # target size in base pairs for each singer run
-max-missing: 0.975 # ignore chunks with more than this proportion of missing bases
+max-missing: 0.6 # ignore chunks with more than this proportion of missing bases
 mutation-rate: 1e-8 # per base per generation mutation rate
 recombination-rate: 1e-8 # per base per generation recombination rate, ignored if hapmap is present
 polarised: True # are variants polarised so that the reference state is ancestral
