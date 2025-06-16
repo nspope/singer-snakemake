@@ -88,7 +88,7 @@ no missing data; (B) around 60% of the sequence is masked in intervals of
 average length 800bp, but the mutation rate is not adjusted; (C) the mutation
 rate is adjusted to account for missing data using the scheme above.
 
-<img src="resources/figure/missing-data-example.png" width="70%">
+<img src="resources/figures/missing-data-example.png" width="70%" />
 
 An important consequence is that when calculating expectations of (linear) site
 statistics from branch statistics in the ARG (e.g. `mode='site'` and
