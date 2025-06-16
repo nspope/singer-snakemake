@@ -27,8 +27,8 @@ snakemake --cores=20 --configfile=config/example_config.yaml
 
 The input files for each chromosome are:
 
-  - __chromosome_name.vcf.gz__ gzip'd VCF that can be used as SINGER input, either diploid and **phased** or haploid with an even number of samples
-  - __chromosome_name.mask.bed__ (optional) bed file containing inaccessible intervals
+  - __chromosome_name.vcf.gz__ gzip'd VCF that can be used as SINGER input, either diploid and **phased** or haploid with an even number of samples. These should be an unbiased sample of segregating variation in the population (no ascertainment).
+  - __chromosome_name.mask.bed__ (optional) bed file containing inaccessible intervals. These are intervals that a priori could not be sequenced reliably. Post-hoc filtered SNPs should go in a separate file, described below.
   - __chromosome_name.hapmap__ (optional) recombination map in the format described in the documentation for `msprime.RateMap.read_hapmap` (see [here](https://tskit.dev/msprime/docs/stable/api.html#msprime.RateMap.read_hapmap))
   - __chromosome_name.meta.csv__ (optional) csv containing metadata for each sample in the VCF, that will be inserted into the output tree sequences. The first row should be the field names, with subsequent rows for every sample in the VCF.
   - __chromosome_name.filter.txt__ (optional) text file containing 1-based positions of filtered SNPs (one per line). These may be present in the VCF (in which case they are removed by the pipeline) or not (in which case they are still used to calculate an adjustment to mutation rate, see below).
@@ -43,7 +43,7 @@ A template for the configuration file is in `configs/example_config.yaml`:
 # --- example_config.yaml ---
 input-dir: "example" # directory with input files per chromosome, that are "chrom.vcf" "chrom.hapmap" "chrom.mask.bed"
 chunk-size: 1e6 # target size in base pairs for each singer run
-max-missing: 0.975 # ignore chunks with more than this proportion of missing bases
+max-missing: 0.5 # ignore chunks with more than this proportion of missing bases
 mutation-rate: 1e-8 # per base per generation mutation rate
 recombination-rate: 1e-8 # per base per generation recombination rate, ignored if hapmap is present
 polarised: True # are variants polarised so that the reference state is ancestral
