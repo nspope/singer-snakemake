@@ -96,13 +96,13 @@ rate is adjusted to account for missing data using the scheme above.
 An important consequence is that when calculating expectations of (linear) site
 statistics from branch statistics in the ARG (e.g. `mode='site'` and
 `mode='branch'` in ``tskit``'s stats methods), then the contribution from each
-window must be weighted by the adjusted mutation rate and then summed across
-windows to get the correct values. Some examples of this sort of calculation
+chunk must be weighted by the adjusted mutation rate and then summed across
+chunks to get the correct values. Some examples of this sort of calculation
 can be seen in `workflow/scripts/tree_statistics.py`. The adjusted mutation
 rates are saved as an ``msprime.RateMap`` object (see below).
 
 Similarly, to calculate sequence-wide distributions of coalescence time or
-other topological statistics, the contribution of each window should be
+other topological statistics, the contribution of each chunk should be
 weighted by the proportion of accessible sequence.
 
 
