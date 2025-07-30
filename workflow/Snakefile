@@ -25,6 +25,7 @@ VERSION = "0.1.0"
 SINGER_VERSION = "0.1.8.beta.013fe1b"  # commit of included SINGER binary
 
 INPUT_DIR = config["input-dir"]
+OUTPUT_DIR = config.get("output-dir", "results")
 CHUNK_SIZE = float(config["chunk-size"])
 MAX_MISSING = float(config["max-missing"])
 POLARISED = bool(config["polarised"])
@@ -45,25 +46,30 @@ SINGER_BINARY = os.path.join(
 assert MCMC_SAMPLES > 0, "Number of MCMC samples must be nonzero"
 assert MCMC_BURNIN < MCMC_SAMPLES, "Burn-in exceeds number of MCMC samples"
 
-if "chromosomes" in config:
-    CHROMOSOMES = config["chromosomes"]
-else:
+CHROMOSOMES = config.get("chromosomes", None)
+if CHROMOSOMES is None:
     CHROMOSOMES = glob_wildcards(os.path.join(INPUT_DIR, "{chrom}.vcf.gz")).chrom
     assert len(CHROMOSOMES) > 0, f"No inputs matching '{INPUT_DIR}/*.vcf.gz'"
 
 np.random.seed(RAND_SEED)
 SEED_ARRAY = {n:x for n, x in zip(CHROMOSOMES, np.random.randint(2 ** 20, size=len(CHROMOSOMES)))}
 
+CHROM_PATH = os.path.join(OUTPUT_DIR, "{chrom}")
+PLOTS_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "plots")
+TREES_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "trees")
+CHUNK_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "chunks")
+STATS_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "stats")
+
 
 # ------ rules ------ #
 
 rule all:
     input:
-        expand("results/{chrom}/plots/site_density.png", chrom=CHROMOSOMES),
-        expand("results/{chrom}/plots/diversity-scatter.png", chrom=CHROMOSOMES),
-        expand("results/{chrom}/plots/pair-coalescence-pdf.png", chrom=CHROMOSOMES),
-        expand("results/{chrom}/plots/pair-coalescence-rates.png", chrom=CHROMOSOMES),
-        expand("results/{chrom}/trees/{chrom}.{rep}.tsz", chrom=CHROMOSOMES, rep=range(MCMC_SAMPLES)),
+        expand(os.path.join(PLOTS_PATH, "site_density.png"), chrom=CHROMOSOMES),
+        expand(os.path.join(PLOTS_PATH, "diversity-scatter.png"), chrom=CHROMOSOMES),
+        expand(os.path.join(PLOTS_PATH, "pair-coalescence-pdf.png"), chrom=CHROMOSOMES),
+        expand(os.path.join(PLOTS_PATH, "pair-coalescence-rates.png"), chrom=CHROMOSOMES),
+        expand(os.path.join(TREES_PATH, "{chrom}.{rep}.tsz"), chrom=CHROMOSOMES, rep=range(MCMC_SAMPLES)),
 
 
 checkpoint chunk_chromosomes:
@@ -74,17 +80,17 @@ checkpoint chunk_chromosomes:
     input: 
         vcf = os.path.join(INPUT_DIR, "{chrom}.vcf.gz"),
     output:
-        vcf = "results/{chrom}/{chrom}.vcf",
-        site_density = "results/{chrom}/plots/site_density.png",
-        chunks = directory("results/{chrom}/chunks"),
-        vcf_stats = "results/{chrom}/{chrom}.vcf.stats.p",
-        vcf_strata_stats = "results/{chrom}/{chrom}.vcf.strata_stats.p",
-        adjusted_mu = "results/{chrom}/{chrom}.adjusted_mu.p",
-        inaccessible = "results/{chrom}/{chrom}.inaccessible.p",
-        filtered = "results/{chrom}/{chrom}.filtered.p",
-        metadata = "results/{chrom}/{chrom}.vcf.samples.p",
+        chunks = directory(CHUNK_PATH),
+        vcf = os.path.join(CHROM_PATH, "{chrom}.vcf"),
+        vcf_stats = os.path.join(CHROM_PATH, "{chrom}.vcf.stats.p"),
+        vcf_strata_stats = os.path.join(CHROM_PATH, "{chrom}.vcf.strata_stats.p"),
+        adjusted_mu = os.path.join(CHROM_PATH, "{chrom}.adjusted_mu.p"),
+        inaccessible = os.path.join(CHROM_PATH, "{chrom}.inaccessible.p"),
+        filtered = os.path.join(CHROM_PATH, "{chrom}.filtered.p"),
+        metadata = os.path.join(CHROM_PATH, "{chrom}.vcf.samples.p"),
+        site_density = os.path.join(PLOTS_PATH, "site_density.png"),
     log:
-        log = "results/{chrom}/{chrom}.log",
+        log = os.path.join(CHROM_PATH, "{chrom}.log"),
     params:
         seed = lambda w: SEED_ARRAY[w.chrom],
         chunk_size = CHUNK_SIZE,
@@ -105,15 +111,35 @@ rule run_singer:
     error (see https://github.com/popgenmethods/SINGER/issues/13)
     """
     input:
-        params = "results/{chrom}/chunks/{id}.yaml"
+        params = os.path.join(CHUNK_PATH, "{id}.yaml"),
     output:
-        recombs = temp(expand("results/{{chrom}}/chunks/{{id}}_recombs_{rep}.txt", rep=range(MCMC_SAMPLES))),
-        branches = temp(expand("results/{{chrom}}/chunks/{{id}}_branches_{rep}.txt", rep=range(MCMC_SAMPLES))),
-        muts = temp(expand("results/{{chrom}}/chunks/{{id}}_muts_{rep}.txt", rep=range(MCMC_SAMPLES))),
-        nodes = temp(expand("results/{{chrom}}/chunks/{{id}}_nodes_{rep}.txt", rep=range(MCMC_SAMPLES))),
+        recombs = temp(
+            expand(
+                os.path.join(CHUNK_PATH, "{id}_recombs_{rep}.txt"),
+                rep=range(MCMC_SAMPLES), allow_missing=True,
+            )
+        ),
+        branches = temp(
+            expand(
+                os.path.join(CHUNK_PATH, "{id}_branches_{rep}.txt"),
+                rep=range(MCMC_SAMPLES), allow_missing=True,
+            )
+        ),
+        nodes = temp(
+            expand(
+                os.path.join(CHUNK_PATH, "{id}_nodes_{rep}.txt"),
+                rep=range(MCMC_SAMPLES), allow_missing=True,
+            )
+        ),
+        muts = temp(
+            expand(
+                os.path.join(CHUNK_PATH, "{id}_muts_{rep}.txt"),
+                rep=range(MCMC_SAMPLES), allow_missing=True,
+            )
+        ),
     log:
-        out = "results/{chrom}/chunks/{id}.stdout",
-        err = "results/{chrom}/chunks/{id}.stderr",
+        out = os.path.join(CHUNK_PATH, "{id}.stdout"),
+        err = os.path.join(CHUNK_PATH, "{id}.stderr"),
     params:
         mcmc_resumes = MCMC_RESUMES,
         singer_binary = SINGER_BINARY,
@@ -154,7 +180,7 @@ rule merge_chunks:
         nodes = lambda w: merge_chunks_input(w, "nodes"),
         branches = lambda w: merge_chunks_input(w, "branches"),
     output:
-        trees = "results/{chrom}/trees/{chrom}.{rep}.tsz",
+        trees = os.path.join(TREES_PATH, "{chrom}.{rep}.tsz"),
     params:
         stratify = STRATIFY_BY,
         version = {"pipeline": VERSION, "singer": SINGER_VERSION},
@@ -164,20 +190,15 @@ rule merge_chunks:
 
 rule tree_statistics:
     """
-    Calculate per-chunk branch statistics ("fitted values") across MCMC iterations:
-
-    - branch diversity
-    - branch Tajima's D
-    - branch site frequency spectra
-    - coalescence rates
+    Calculate per-chunk branch statistics ("fitted values") across MCMC iterations
     """
     input:
         inaccessible = rules.chunk_chromosomes.output.inaccessible,
         filtered = rules.chunk_chromosomes.output.filtered,
         trees = rules.merge_chunks.output.trees,
     output:
-        stats = "results/{chrom}/stats/{chrom}.{rep,[0-9]+}.stats.p",
-        strata_stats = "results/{chrom}/stats/{chrom}.{rep,[0-9]+}.strata_stats.p",
+        stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.stats.p"),
+        strata_stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.strata_stats.p"),
     params:
         mutation_rate = MUTATION_RATE,
         stratify = STRATIFY_BY,
@@ -186,7 +207,7 @@ rule tree_statistics:
 
 
 def diagnostics_input(wildcards, regex):
-    dir = f"results/{wildcards.chrom}/stats"
+    dir = f"{OUTPUT_DIR}/{wildcards.chrom}/stats"
     out = expand(
         os.path.join(dir, f"{{chrom}}.{{rep}}.{regex}.p"),
         chrom=wildcards.chrom,
@@ -197,13 +218,8 @@ def diagnostics_input(wildcards, regex):
 
 rule diagnostics:
     """
-    Make some diagnostic plots per chromosome:
-
-    - per-base site diversity (from VCF) vs branch diversity ("fitted values" from trees) across chunks
-    - branch diversity (average over chunks) over MCMC iterations
-    - per-base site and branch diversity over genome position
-    - the above, but with Tajima's D instead of nucleotide diversity
-    - site allele frequency spectrum vs branch allele frequency spectrum (folded and unfolded)
+    Make some diagnostic plots per chromosome comparing branch and site
+    statistics.
     """
     input:
         ratemap = rules.chunk_chromosomes.output.adjusted_mu,
@@ -212,14 +228,14 @@ rule diagnostics:
         stats = lambda w: diagnostics_input(w, "stats"),
         strata_stats = lambda w: diagnostics_input(w, "strata_stats"),
     output:
-        diversity_scatter = "results/{chrom}/plots/diversity-scatter.png",
-        diversity_trace = "results/{chrom}/plots/diversity-trace.png",
-        diversity_skyline = "results/{chrom}/plots/diversity-skyline.png",
-        tajima_d_scatter = "results/{chrom}/plots/tajima-d-scatter.png",
-        tajima_d_trace = "results/{chrom}/plots/tajima-d-trace.png",
-        tajima_d_skyline = "results/{chrom}/plots/tajima-d-skyline.png",
-        folded_afs = "results/{chrom}/plots/folded-afs.png",
-        unfolded_afs = "results/{chrom}/plots/unfolded-afs.png",
+        diversity_scatter = os.path.join(PLOTS_PATH, "diversity-scatter.png"),
+        diversity_trace = os.path.join(PLOTS_PATH, "diversity-trace.png"),
+        diversity_skyline = os.path.join(PLOTS_PATH, "diversity-skyline.png"),
+        tajima_d_scatter = os.path.join(PLOTS_PATH, "tajima-d-scatter.png"),
+        tajima_d_trace = os.path.join(PLOTS_PATH, "tajima-d-trace.png"),
+        tajima_d_skyline = os.path.join(PLOTS_PATH, "tajima-d-skyline.png"),
+        folded_afs = os.path.join(PLOTS_PATH, "folded-afs.png"),
+        unfolded_afs = os.path.join(PLOTS_PATH, "unfolded-afs.png"),
     params:
         mcmc_samples = MCMC_SAMPLES,
         mcmc_burnin = MCMC_BURNIN,
@@ -231,21 +247,15 @@ rule diagnostics:
 
 rule coalescence_rates:
     """
-    Calculate pair/cross coalescence rates across MCMC iterations:
-
-    - per-chromosome pair coalescence rate, all samples
-    - per-chunk pair coalescence rate, all samples
-    - per-chromosome cross-coalescence rate, within/between populations (optional)
-    - per-chunk cross-coalescence rate, within/between populations (optional)
-
+    Calculate pair/cross coalescence rates across MCMC iterations.
     Rates are calculated within logarithmically-spaced time bins.
     """
     input:
         inaccessible = rules.chunk_chromosomes.output.inaccessible,
         trees = rules.merge_chunks.output.trees
     output:
-        coalrate = "results/{chrom}/stats/{chrom}.{rep,[0-9]+}.coalrate.p",
-        crossrate = "results/{chrom}/stats/{chrom}.{rep,[0-9]+}.crossrate.p",
+        coalrate = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.coalrate.p"),
+        crossrate = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.crossrate.p"),
     params:
         coalrate_epochs = COALRATE_EPOCHS,
         stratify = STRATIFY_BY,
@@ -254,7 +264,7 @@ rule coalescence_rates:
 
 
 def plot_coalescence_rates_input(wildcards, what):
-    dir = f"results/{wildcards.chrom}/stats"
+    dir = f"{OUTPUT_DIR}/{wildcards.chrom}/stats"
     out = expand(
         os.path.join(dir, f"{{chrom}}.{{rep}}.{what}.p"),
         chrom=wildcards.chrom,
@@ -272,8 +282,8 @@ rule plot_coalescence_rates:
         coalrate = lambda w: plot_coalescence_rates_input(w, "coalrate"),
         crossrate = lambda w: plot_coalescence_rates_input(w, "crossrate"),
     output:
-        pair_coalescence_pdf = "results/{chrom}/plots/pair-coalescence-pdf.png",
-        pair_coalescence_rates = "results/{chrom}/plots/pair-coalescence-rates.png",
+        pair_coalescence_pdf = os.path.join(PLOTS_PATH, "pair-coalescence-pdf.png"),
+        pair_coalescence_rates = os.path.join(PLOTS_PATH, "pair-coalescence-rates.png"),
     params:
         coalrate_epochs = COALRATE_EPOCHS,
         stratify = STRATIFY_BY,
