@@ -45,8 +45,11 @@ SINGER_BINARY = os.path.join(
 assert MCMC_SAMPLES > 0, "Number of MCMC samples must be nonzero"
 assert MCMC_BURNIN < MCMC_SAMPLES, "Burn-in exceeds number of MCMC samples"
 
-CHROMOSOMES = glob_wildcards(os.path.join(INPUT_DIR, "{chrom}.vcf.gz")).chrom
-assert len(CHROMOSOMES) > 0, f"No inputs matching '{INPUT_DIR}/*.vcf.gz'"
+if "chromosomes" in config:
+    CHROMOSOMES = config["chromosomes"]
+else:
+    CHROMOSOMES = glob_wildcards(os.path.join(INPUT_DIR, "{chrom}.vcf.gz")).chrom
+    assert len(CHROMOSOMES) > 0, f"No inputs matching '{INPUT_DIR}/*.vcf.gz'"
 
 np.random.seed(RAND_SEED)
 SEED_ARRAY = {n:x for n, x in zip(CHROMOSOMES, np.random.randint(2 ** 20, size=len(CHROMOSOMES)))}
