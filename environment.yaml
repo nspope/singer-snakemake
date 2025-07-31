@@ -4,5 +4,6 @@ channels:
   - bioconda
 dependencies:
   - pip
+  - gsl
   - pip:
     - -r requirements.txt
