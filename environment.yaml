@@ -5,6 +5,5 @@ channels:
 dependencies:
   - python>=3.9
   - pip
-  - gsl
   - pip:
     - -r requirements.txt
