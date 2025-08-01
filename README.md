@@ -44,7 +44,9 @@ A template for the configuration file is in `configs/example_config.yaml`:
 
 ```yaml
 # --- example_config.yaml ---
-input-dir: "example" # directory with input files per chromosome, that are "chrom.vcf" "chrom.hapmap" "chrom.mask.bed"
+input-dir: "example" # directory with input files per chromosome, see README
+output-dir: "results" # path where to place output
+chromosomes: ~ # a list of chromosomes to use (e.g. "chr1"), if None (~) use all `vcf.gz` in `input-dir`
 chunk-size: 1e6 # target size in base pairs for each singer run
 max-missing: 0.5 # ignore chunks with more than this proportion of missing bases
 mutation-rate: 1e-8 # per base per generation mutation rate
@@ -55,7 +57,7 @@ mcmc-thin: 10 # thinning interval between MCMC samples
 mcmc-burnin: 0.2 # proportion of initial samples discarded when computing plots of statistics
 mcmc-resumes: 1000 # maximum number of times to try to resume MCMC on error at a given iteration
 coalrate-epochs: 25 # number of time intervals within which to calculate statistics
-stratify-by: "population" # stratify cross coalescence rates by this column in the metadata, or None
+stratify-by: "population" # stratify cross coalescence rates by this column in the metadata, or None (~)
 random-seed: 1 # random seed
 ```
 
