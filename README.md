@@ -45,7 +45,7 @@ A template for the configuration file is in `configs/example_config.yaml`:
 ```yaml
 # --- example_config.yaml ---
 input-dir: "example" # directory with input files per chromosome, see README
-output-dir: "results" # path where to place output
+output-dir: "results" # directory where to place output
 chromosomes: ~ # a list of chromosomes to use (e.g. "chr1"), if None (~) use all `vcf.gz` in `input-dir`
 chunk-size: 1e6 # target size in base pairs for each singer run
 max-missing: 0.5 # ignore chunks with more than this proportion of missing bases
