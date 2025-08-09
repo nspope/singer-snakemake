@@ -133,17 +133,12 @@ The output files for each chromosome will be generated in `results/<chromosome_n
 
 ### Sanity checking
 
-To check that the timescale is correctly calibrated on synthetic data given
-some missing data, it can be useful to compare the simulated (true) ARG to that
-inferred by SINGER. The script `resources/scripts/compare-vs-simulation.py`
-generates some visual comparisons; these include distributions of pair
-coalescence times, root heights, and mutation ages of different frequencies
-between the two ARGs. E.g.  after running the example workflow,
+To check that the inference pipeline works (especially with missing data),
+the Snakemake script `workflow/validation.smk` (config
+template at `config/validation.yaml`) creates some visual diagnostics:
 
-```bash
-python resources/scripts/compare-vs-simulation.py \
-  --true-arg "example/example.tsz" \
-  --inferred-arg "results/example/trees/example.99.tsz" \
-  --inaccessible-ratemap "results/example/example.inaccessible.p" \
-  --output-dir "results/example/sanity-checks"
-```
+  1. Simulate from a given `stdpopsim` model with intervals and variants randomly masked;
+  2. Infer ARGs from the simulated data with SINGER;
+  3. Calculate the distribution of mutation ages for each possible frequency (e.g. AFS bin);
+  4. Project (smooth) to a subsample (e.g. bins in a smaller AFS) by hypergeometric sampling;
+  5. Plot alongside the simulated (true) mutation age distributions.
