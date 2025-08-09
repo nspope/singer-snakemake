@@ -43,7 +43,6 @@ ts = engine.simulate(
 )
 sequence_mask = simulate_sequence_mask(ts, interval_mask_density, interval_mask_length, subseed[1])
 variant_mask = simulate_variant_mask(ts, variant_mask_prop, subseed[2])
-print("foo", variant_mask_prop, variant_mask.sum())
 
 # filter out masked sites from true trees, for the sake of downstream comparison
 site_position = ts.sites_position.astype(int)

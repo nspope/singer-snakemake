@@ -6,7 +6,6 @@ allele frequency spectrum.
 import itertools
 import numpy as np
 import matplotlib.pyplot as plt
-
 from matplotlib.ticker import FixedLocator
 
 
@@ -48,7 +47,8 @@ plt.savefig(snakemake.output.pdf_plot)
 plt.clf()
 
 # plot mean per AFS bin in single panel
-fig, axs = plt.subplots(1, figsize=(len(bins) * 0.05, 4), constrained_layout=True)
+width = max(3.5, len(bins) * 0.1)
+fig, axs = plt.subplots(1, figsize=(width, 3), constrained_layout=True)
 tick_labels = [str(x).replace(" ", "") for x in bins]
 tick_locations, tick_labels = zip(
     *((i, x) for i, x in enumerate(tick_labels) if x.endswith(",0)"))

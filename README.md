@@ -133,12 +133,17 @@ The output files for each chromosome will be generated in `results/<chromosome_n
 
 ### Sanity checking
 
-To check that the inference pipeline works (especially with missing data),
-the Snakemake script `workflow/validation.smk` (config
-template at `config/validation.yaml`) creates some visual diagnostics:
+To check that the inference pipeline works (especially with missing data), the
+Snakemake script `workflow/validation.smk` (config template at
+`config/validation.yaml`) creates some visual comparisons for simulated data:
 
   1. Simulate from a given `stdpopsim` model with intervals and variants randomly masked;
   2. Infer ARGs from the simulated data with SINGER;
   3. Calculate the distribution of mutation ages for each possible frequency (e.g. AFS bin);
   4. Project (smooth) to a subsample (e.g. bins in a smaller AFS) by hypergeometric sampling;
   5. Plot alongside the simulated (true) mutation age distributions.
+
+For example, from the human demographic model `"OutOfAfrica_3G09"` projected to a single diploid
+in each of YRI, CEU, and CHB:
+
+<img src="resources/figures/mutation-age-pdf-example.png" width="70%" />
