@@ -147,3 +147,7 @@ For example, from the human demographic model `"OutOfAfrica_3G09"` projected to 
 in each of YRI, CEU, and CHB:
 
 <img src="resources/figures/mutation-age-pdf-example.png" width="70%" />
+
+Where plot labels are `(frequency in YRI, in CEU, in CHB)`, and the monomorphic bins
+`(0, 0, 0)` and `(2, 2, 2)` exist because of down-projection (i.e. mutations
+which have zero frequency in a subsample of two haploids, from some larger sample).
