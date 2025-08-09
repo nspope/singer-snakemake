@@ -139,9 +139,9 @@ Snakemake script `workflow/validation.smk` (config template at
 
   1. Simulate from a given `stdpopsim` model with intervals and variants randomly masked;
   2. Infer ARGs from the simulated data with SINGER;
-  3. Calculate the distribution of mutation ages for each possible frequency (e.g. AFS bin);
-  4. Project (smooth) to a subsample (e.g. bins in a smaller AFS) by hypergeometric sampling;
-  5. Plot alongside the simulated (true) mutation age distributions.
+  3. Calculate the distribution of mutation ages for each possible frequency (e.g. AFS bin), averaging over MCMC replicates;
+  4. Smooth by projecting to a subsample (e.g. bins in a smaller AFS) by hypergeometric sampling;
+  5. Plot alongside the true (simulated) mutation age distributions.
 
 For example, from the human demographic model `"OutOfAfrica_3G09"` projected to a single diploid
 in each of YRI, CEU, and CHB:
@@ -150,4 +150,4 @@ in each of YRI, CEU, and CHB:
 
 Where plot labels are `(frequency in YRI, in CEU, in CHB)`, and the monomorphic bins
 `(0, 0, 0)` and `(2, 2, 2)` exist because of down-projection (i.e. mutations
-which have zero frequency in a subsample of two haploids, from some larger sample).
+which have zero frequency in a subsample of two haploids, taken from some larger sample).
