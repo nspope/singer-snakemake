@@ -1,0 +1,22 @@
+# --- settings for validation workflow --- #
+output-dir: "output"  # where to place validation results and simulations
+random-seed: 1024  # global random seed
+num-replicates: 5  # number of replicate ARGs to simulate
+mask-sequence: [0.0001, 800]  # randomly mask intervals with this density/mean length
+mask-variants: 0.2  # randomly mask this proportion of variants
+time-grid: [2, 5, 50]  # log10 start, log10 stop, number of intervals for mutation age plot
+project-afs-to: 4  # project AFS to this number of haploids per population for mutation age plot
+singer-snakemake-config: "config/example_config.yaml"  # path to singer-snakemake config to use (mutation/recombination rates ignored)
+stdpopsim-config:  # simulation settings
+    species: "HomSap"  # stdpopsim species to use
+    demographic-model: "OutOfAfrica_3G09"  # name of demographic model
+    samples: {"CEU": 10, "YRI": 10, "CHB": 10}  # sampled individuals per population
+    contig:  # kwargs to Species.get_contig
+        chromosome: "chr1"
+        left: 200.0e+6
+        right: 210.0e+6
+        genetic_map: "HapMapII_GRCh38"
+    #dfe:  # distribution of fitness effects (DFE) TODO
+    #annotation:  # apply DFE over this annotation (if ~ apply over entire sequence) TODO
+    #mask-annotation:  # mask out the annotation TODO
+

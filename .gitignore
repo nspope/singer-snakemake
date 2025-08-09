@@ -4,5 +4,7 @@
 *.log
 data/
 results/*
+output/*
 .test-workflow/diploid*
 .test-workflow/haploid*
+__pycache__/
