@@ -43,8 +43,8 @@ for i, ii in enumerate(subset):
             axs[i, j].set_visible(False)
         else:
             label = f"({ii}, {jj})"
-            true = true_rel[ii, jj].cumsum() / 1000
-            infr = infr_rel[ii, jj].cumsum() / 1000
+            true = true_rel[ii, jj].cumsum()
+            infr = infr_rel[ii, jj].cumsum()
             axs[i, j].text(0.05, 0.95, label, ha="left", va="top", transform=axs[i, j].transAxes, size=8)
             axs[i, j].plot(time_grid, true, "-", color="black", label="true", linewidth=1)
             axs[i, j].plot(time_grid, infr, "-", color="firebrick", label="estimated", linewidth=1)
@@ -53,7 +53,8 @@ for i, ii in enumerate(subset):
                 axs[i, j].set_yscale("log")
             if i == j:
                 axs[i, j].tick_params(axis="both", labelbottom=True, labelleft=True)
-fig.supylabel("Average number of shared mutations (thousands)")
+                #axs[i, j].ticklabel_format(axis="y", style="sci", scilimits=(-1, 1))
+fig.supylabel("Average number of shared mutations")
 fig.supxlabel("Maximum mutation age")
 fig.legend(
     *axs[0, 0].get_legend_handles_labels(), 
