@@ -37,12 +37,10 @@ midpoints = (time_grid[:-1] + time_grid[1:]) / 2
 for f, ax in zip(bins, axs.ravel()):
     true_pdf = true_afs[*f] / true_afs[*f].sum()
     infr_pdf = infr_afs[*f] / infr_afs[*f].sum()
-    #ax.step(time_grid[1:], true_pdf[1:], where="post", color="black", label="true")
-    #ax.step(time_grid[1:], infr_pdf[1:], where="post", color="firebrick", label="estimated")
     ax.plot(midpoints, true_pdf[1:], "-", color="black", label="true", linewidth=1)
     ax.plot(midpoints, infr_pdf[1:], "-", color="firebrick", label="estimated", linewidth=1)
-    ax.text(0.05, 0.95, f"{f}", ha="left", va="top", size=8, transform=ax.transAxes)
     ax.set_xscale("log")
+    ax.text(0.05, 0.95, f"{f}", ha="left", va="top", size=8, transform=ax.transAxes)
 fig.supylabel("Proportion of mutations")
 fig.supxlabel("Mutation age")
 fig.legend(*axs[0, 0].get_legend_handles_labels(), loc='outside upper center', ncol=4)

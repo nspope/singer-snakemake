@@ -148,7 +148,7 @@ def mutation_edge_and_frequency(
     return mutation_edge, mutation_freq
 
 
-def time_windowed_mutation_afs(
+def time_windowed_afs(
     ts: tskit.TreeSequence, 
     sample_sets: List[List[int]], 
     time_breaks: np.ndarray,
@@ -159,9 +159,9 @@ def time_windowed_mutation_afs(
     Calculate observed allele frequency spectrum in time windows. If the age of
     mutations is unknown, then integrate over mutation positions on a branch,
     such that the contribution of a mutation on a given edge to a given time
-    window is (edge_overlap_with_window / length_of_edge).
+    window is `(edge_overlap_with_window / length_of_edge)`.
 
-    Output shape is (sfs_dimensions, num_time_windows).
+    Output shape is `(sfs_dimensions, num_time_windows)`.
     """
     assert time_breaks[0] == 0.0 and time_breaks[-1] == np.inf
     assert np.all(np.diff(time_breaks) > 0)
@@ -207,3 +207,88 @@ def time_windowed_mutation_afs(
         afs /= ts.sequence_length
 
     return afs
+
+
+def time_windowed_relatedness(
+    ts: tskit.TreeSequence,
+    time_breaks: np.ndarray,
+    unknown_mutation_age: bool = True,
+    span_normalise: bool = False,
+    for_individuals: bool = True,
+):
+    """
+    Calculate observed genetic relatedness (the average number of shared mutations
+    between pairs of haplotypes) in time windows. If the age of mutations is unknown,
+    then integrate over mutation positions on a branch, such that the
+    contribution of a mutation on a given edge to a given time window is
+    `(edge_overlap_with_window / length_of_edge)`.
+
+    Output shape is `(num_samples, num_samples, num_time_windows)` or
+    `(num_individuals, num_individuals, num_time_windows)` if `for_individuals`.
+    """
+    assert time_breaks[0] == 0.0 and time_breaks[-1] == np.inf
+    assert np.all(np.diff(time_breaks) > 0)
+
+    # find mutation mapping to edge
+    span = 0.0
+    edge = np.full(ts.num_mutations, tskit.NULL)
+    for t in ts.trees():
+        if t.num_edges: 
+            span += t.span
+        for m in t.mutations():
+            edge[m.id] = m.edge
+    keep = edge != tskit.NULL
+
+    # find time windows of edge endpoints
+    node_below = ts.edges_child[edge]
+    node_above = ts.edges_parent[edge]
+    window_below = np.digitize(ts.nodes_time[node_below], time_breaks) - 1
+    window_above = np.digitize(ts.nodes_time[node_above], time_breaks) - 1
+    assert np.all(np.logical_and(window_below >= 0, window_below < time_breaks.size - 1))
+    assert np.all(np.logical_and(window_above >= 0, window_above < time_breaks.size - 1))
+
+    # calculate overlap with time window beneath node
+    overlap_below = ts.nodes_time[node_below] - time_breaks[window_below] 
+    overlap_above = ts.nodes_time[node_above] - time_breaks[window_above] 
+    density = 1 / (ts.nodes_time[node_above] - ts.nodes_time[node_below])
+
+    # calculate time windowed relatedness
+    relatedness = np.zeros((time_breaks.size - 1, ts.num_samples, ts.num_samples))
+    if unknown_mutation_age:  
+        correction = np.zeros_like(relatedness)
+        for t in ts.trees(sample_lists=True):
+            for m in t.mutations():
+                i = m.id
+                if keep[i]:
+                    u, v = window_below[i], window_above[i]
+                    s = list(t.samples(m.node))
+                    pairs = np.ix_(s, s)
+                    relatedness[v][pairs] += overlap_above[i] * density[i]
+                    relatedness[u][pairs] -= overlap_below[i] * density[i]
+                    correction[v][pairs] -= density[i]
+                    correction[u][pairs] += density[i]
+        relatedness[:-1] += correction[:-1].cumsum(axis=0) * \
+            np.diff(time_breaks)[:-1, np.newaxis, np.newaxis]
+    else:
+        time_index = np.digitize(ts.mutations_time, time_breaks) - 1
+        assert np.all(np.logical_and(time_index >= 0, time_index < time_breaks.size - 1))
+        for t in ts.trees(sample_lists=True):
+            for m in t.mutations():
+                i = m.id
+                if keep[i]:
+                    u = time_index[i]
+                    s = list(t.samples(m.node))
+                    relatedness[u][np.ix_(s, s)] += 1.0
+
+    if span_normalise:
+        relatedness /= span
+
+    if for_individuals:  # average over haplotypes for pairs of individuals
+        individual_map = np.zeros((ts.num_individuals, ts.num_samples))
+        for i in ts.individuals():
+            individual_map[i.id, i.nodes] = 1 / i.nodes.size
+        relatedness = individual_map @ relatedness @ individual_map.T
+
+    return relatedness.transpose()
+
+    

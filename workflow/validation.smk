@@ -56,6 +56,8 @@ TRUE_TREES_PATH = f"{INPUT_DIR}/{{chrom}}.tsz"
 INFR_TREES_PATH = f"{OUTPUT_DIR}/{{chrom}}/trees/{{chrom}}.{{rep}}.tsz"
 INFR_SITE_AFS_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.infr_site_afs.npy"
 TRUE_SITE_AFS_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.true_site_afs.npy"
+INFR_SITE_REL_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.infr_site_rel.npy"
+TRUE_SITE_REL_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.true_site_rel.npy"
 PLOT_PATH = f"{OUTPUT_DIR}/plots"
 
 
@@ -65,10 +67,9 @@ rule all:
     input:
         vcf = expand(VCF_PATH, chrom=SIMULATION_SEEDS),
         trees = expand(INFR_TREES_PATH, chrom=SIMULATION_SEEDS, rep=MCMC_SAMPLES),
-        infr_afs = expand(INFR_SITE_AFS_PATH, chrom=SIMULATION_SEEDS),
-        true_afs = expand(TRUE_SITE_AFS_PATH, chrom=SIMULATION_SEEDS),
         pdf_plot = os.path.join(PLOT_PATH, "mutation-age-pdf.png"),
         exp_plot = os.path.join(PLOT_PATH, "mutation-age-expectation.png"),
+        rel_plot = os.path.join(PLOT_PATH, "relatedness-over-time.png"),
 
 
 rule simulate_arg:
@@ -104,13 +105,14 @@ rule calculate_inferred_afs:
     after projecting down to smaller sample sizes per population.
     """
     input:
-        trees = expand(INFR_TREES_PATH, rep=MCMC_SAMPLES, allow_missing=True),
+        trees = ancient(expand(INFR_TREES_PATH, rep=MCMC_SAMPLES, allow_missing=True)),
     output:
         site_afs = INFR_SITE_AFS_PATH,
     params:
         project_to = PROJECT_TO,
         time_grid = TIME_GRID,
         unknown_mutation_age = True,
+        span_normalise = False,
     script:
         "validation/calculate_afs.py"
 
@@ -128,6 +130,7 @@ rule calculate_reference_afs:
         project_to = PROJECT_TO,
         time_grid = TIME_GRID,
         unknown_mutation_age = False,
+        span_normalise = False,
     script:
         "validation/calculate_afs.py"
 
@@ -146,3 +149,53 @@ rule compare_mutation_ages:
         time_grid = TIME_GRID,
     script:
         "validation/compare_mutation_ages.py"
+
+
+rule calculate_inferred_relatedness:
+    """
+    Average time-windowed observed relatedness across MCMC samples per simulation.
+    """
+    input:
+        trees = ancient(expand(INFR_TREES_PATH, rep=MCMC_SAMPLES, allow_missing=True)),
+    output:
+        site_relatedness = INFR_SITE_REL_PATH,
+    params:
+        time_grid = TIME_GRID,
+        unknown_mutation_age = True,
+        for_individuals = True,
+        span_normalise = False,
+    script:
+        "validation/calculate_relatedness.py"
+
+
+rule calculate_observed_relatedness:
+    """
+    Average time-windowed observed relatedness across MCMC samples per simulation.
+    """
+    input:
+        trees = [TRUE_TREES_PATH],
+    output:
+        site_relatedness = TRUE_SITE_REL_PATH,
+    params:
+        time_grid = TIME_GRID,
+        unknown_mutation_age = True,
+        for_individuals = True,
+        span_normalise = False,
+    script:
+        "validation/calculate_relatedness.py"
+
+
+rule compare_relatedness:
+    """
+    Plot individual relatedness across time for true and inferred ARGs.
+    """
+    input:
+        true_site_relatedness = expand(TRUE_SITE_REL_PATH, chrom=SIMULATION_SEEDS),
+        infr_site_relatedness = expand(INFR_SITE_REL_PATH, chrom=SIMULATION_SEEDS),
+    output:
+        rel_plot = rules.all.input.rel_plot,
+    params:
+        time_grid = TIME_GRID,
+        max_individuals = 6,
+    script:
+        "validation/compare_relatedness.py"

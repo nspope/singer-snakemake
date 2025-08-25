@@ -46,7 +46,7 @@ variant_mask = simulate_variant_mask(ts, variant_mask_prop, subseed[2])
 
 # filter out masked sites from true trees, for the sake of downstream comparison
 site_position = ts.sites_position.astype(int)
-site_masked = np.logical_and(
+site_masked = np.logical_or(
     sequence_mask[site_position],
     variant_mask,
 )
