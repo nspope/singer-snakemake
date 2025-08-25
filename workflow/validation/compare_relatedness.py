@@ -49,6 +49,8 @@ for i, ii in enumerate(subset):
             axs[i, j].plot(time_grid, true, "-", color="black", label="true", linewidth=1)
             axs[i, j].plot(time_grid, infr, "-", color="firebrick", label="estimated", linewidth=1)
             axs[i, j].set_xscale("log")
+            if snakemake.params.log_relatedness:
+                axs[i, j].set_yscale("log")
             if i == j:
                 axs[i, j].tick_params(axis="both", labelbottom=True, labelleft=True)
 fig.supylabel("Average number of shared mutations (thousands)")

@@ -196,6 +196,7 @@ rule compare_relatedness:
         rel_plot = rules.all.input.rel_plot,
     params:
         time_grid = TIME_GRID,
+        log_relatedness = False,
         max_individuals = 6,
     script:
         "validation/compare_relatedness.py"
