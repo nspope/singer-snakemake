@@ -21,8 +21,10 @@ from datetime import datetime
 
 configfile: "config/example_config.yaml"
 
-VERSION = "0.1.0"
+# Not sure what to set for this
+VERSION = "0.1.1"
 SINGER_VERSION = "0.1.8.beta.013fe1b"  # commit of included SINGER binary
+POLEGON_VERSION = "0c088b339a0636edde1cf569f0d7c4eea6a07af5"  # commit of included POLEGON binary
 
 INPUT_DIR = config["input-dir"]
 OUTPUT_DIR = config.get("output-dir", "results")
@@ -38,9 +40,14 @@ MCMC_RESUMES = int(config["mcmc-resumes"] * MCMC_SAMPLES)
 RAND_SEED = int(config["random-seed"])
 COALRATE_EPOCHS = int(config["coalrate-epochs"])
 STRATIFY_BY = None if config["stratify-by"] == "None" else config["stratify-by"]
+RUN_POLEGON = bool(config.get("run-polegon", False))
 SINGER_BINARY = os.path.join(
-   workflow.basedir, os.path.pardir, "resources", 
+   workflow.basedir, os.path.pardir, "resources",
    "singer-0.1.8-beta-linux-x86_64", "singer",
+)
+POLEGON_BINARY = os.path.join(
+   workflow.basedir, os.path.pardir, "resources",
+   "polegon-0.1.3-alpha-linux-x86_64", "polegon_master",
 )
 
 assert MCMC_SAMPLES > 0, "Number of MCMC samples must be nonzero"
@@ -57,6 +64,7 @@ SEED_ARRAY = {n:x for n, x in zip(CHROMOSOMES, np.random.randint(2 ** 20, size=l
 CHROM_PATH = os.path.join(OUTPUT_DIR, "{chrom}")
 PLOTS_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "plots")
 TREES_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "trees")
+TREES_POLEGON_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "polegon")
 CHUNK_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "chunks")
 STATS_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "stats")
 
@@ -70,6 +78,7 @@ rule all:
         expand(os.path.join(PLOTS_PATH, "pair-coalescence-pdf.png"), chrom=CHROMOSOMES),
         expand(os.path.join(PLOTS_PATH, "pair-coalescence-rates.png"), chrom=CHROMOSOMES),
         expand(os.path.join(TREES_PATH, "{chrom}.{rep}.tsz"), chrom=CHROMOSOMES, rep=range(MCMC_SAMPLES)),
+        expand(os.path.join(TREES_POLEGON_PATH, "{chrom}.{rep}.tsz"), chrom=CHROMOSOMES, rep=range(MCMC_SAMPLES)) if RUN_POLEGON else []
 
 
 checkpoint chunk_chromosomes:
@@ -77,7 +86,7 @@ checkpoint chunk_chromosomes:
     Chop up chromosome into chunks, adjust mutation rate to reflect missing
     data, calculate statistics in chunks, make some plots of site/missing data density.
     """
-    input: 
+    input:
         vcf = os.path.join(INPUT_DIR, "{chrom}.vcf.gz"),
     output:
         chunks = directory(CHUNK_PATH),
@@ -172,7 +181,7 @@ rule merge_chunks:
     Sets mutations.parent (https://github.com/popgenmethods/SINGER/issues/11)
     """
     input:
-        ratemap = rules.chunk_chromosomes.output.adjusted_mu, 
+        ratemap = rules.chunk_chromosomes.output.adjusted_mu,
         metadata = rules.chunk_chromosomes.output.metadata,
         params = merge_chunks_params,
         recombs = lambda w: merge_chunks_input(w, "recombs"),
@@ -187,6 +196,32 @@ rule merge_chunks:
     script:
         "scripts/merge_chunks.py"
 
+# Run POLEGON
+rule run_polegon:
+    """
+    Run POLEGON on the merged tree sequence.
+    """
+    input:
+        trees = os.path.join(TREES_PATH, "{chrom}.{rep}.tsz"),
+        ratemap = rules.chunk_chromosomes.output.adjusted_mu,
+    output:
+        os.path.join(TREES_POLEGON_PATH, "{chrom}.{rep}.tsz"),
+    params:
+        stratify = STRATIFY_BY,
+        version = {"pipeline": VERSION, "polegon": POLEGON_VERSION},
+        polegon_binary = POLEGON_BINARY,
+        burnin = config.get("polegon-burnin", 100),
+        samples = config.get("polegon-samples", 100),
+        scaling_rep = config.get("polegon-scaling-rep", 3),
+        thin = config.get("polegon-thin", 10),
+        max_step = config.get("polegon-max-step", 10),
+    # Script assumes shallow shadowing
+    shadow: 'shallow'
+    log:
+        out = os.path.join(TREES_POLEGON_PATH, "{chrom}.{rep}.out"),
+        err = os.path.join(TREES_POLEGON_PATH, "{chrom}.{rep}.err"),
+    script:
+        "scripts/run_polegon.py"
 
 rule tree_statistics:
     """

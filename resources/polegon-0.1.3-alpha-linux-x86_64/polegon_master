@@ -1,0 +1,199 @@
+#!/usr/bin/env python3.8
+
+import numpy as np
+import pandas as pd
+import argparse
+import os
+import sys
+import subprocess
+import tskit
+
+def average_mutation_rate(mutation_map_file):
+    mutation_map = np.loadtxt(mutation_map_file, delimiter=' ')
+    length = 0
+    mut_length = 0
+    m = mutation_map.shape[0]
+    for i in range(m):
+        length += mutation_map[i, 1] - mutation_map[i, 0]
+        mut_length += (mutation_map[i, 1] - mutation_map[i, 0])*mutation_map[i, 2]
+    avg_m = mut_length/length
+    print(f"Average mutation rate: {avg_m}.")
+    return avg_m
+
+def write_root_branches(ts):
+    left = 0
+    right = 0
+    tree = ts.first()
+    while tree.total_branch_length == 0:
+        tree.next()
+    left = tree.interval[0]
+    root = tree.root
+    root_branches = []
+    for tree in ts.trees():
+        if tree.total_branch_length > 0 and tree.root != root:
+            right = tree.interval[0]
+            root_branch = [left, right, -1, root]
+            root_branches.append(root_branch)
+            left = tree.interval[0]
+            root = tree.root
+    root_branch = [left, ts.sequence_length, -1, root]
+    root_branches.append(root_branch)
+    return np.array(root_branches)
+
+def write_arg(ts, node_file, edge_file):
+    node_time = ts.tables.nodes.time
+    sample_status = ts.tables.nodes.flags
+    branch_left = ts.tables.edges.left
+    branch_right = ts.tables.edges.right
+    branch_parent = ts.tables.edges.parent
+    branch_child = ts.tables.edges.child
+    branch_table = np.array([branch_left, branch_right, branch_parent, branch_child])
+    branch_table = branch_table.transpose()
+    root_branch_table = write_root_branches(ts)
+    branch_table = np.vstack([branch_table, root_branch_table])
+    node_table = np.vstack([node_time])
+    node_table = node_table.transpose()
+    np.savetxt(node_file, node_table)
+    np.savetxt(edge_file, branch_table)
+
+def write_muts(ts, mut_file):
+    positions = []
+    lower_nodes = []
+    upper_nodes = []
+    derived_states = []
+    for tree in ts.trees():
+        for s in tree.sites():
+            for m in s.mutations:
+                if m.node != tree.root:
+                    positions.append(s.position)
+                    lower_nodes.append(m.node)
+                    upper_nodes.append(tree.parent(m.node))
+                    derived_states.append(1)
+    mut_table = np.array([positions, lower_nodes, upper_nodes, derived_states])
+    mut_table = mut_table.transpose()
+    np.savetxt(mut_file, mut_table)
+
+def read_ARG(node_file, edge_file):
+    node_time = np.loadtxt(node_file)
+    edge_span = np.loadtxt(edge_file)
+    edge_span = edge_span[edge_span[:, 2] >= 0, :]
+    length = max(edge_span[:, 1])
+    tables = tskit.TableCollection(sequence_length=length)
+    node_table = tables.nodes
+    edge_table = tables.edges
+    for t in node_time:
+        if (t == 0):
+            node_table.add_row(flags=tskit.NODE_IS_SAMPLE)
+        else:
+            node_table.add_row(time = t)
+    parent_indices = np.array(edge_span[:, 2], dtype = np.int32)
+    child_indices = np.array(edge_span[:, 3], dtype = np.int32)
+    edge_table.set_columns(left = edge_span[:, 0], right = edge_span[:, 1], parent = parent_indices, child = child_indices)
+    for i in range(len(parent_indices)):
+        j = int(parent_indices[i])
+        k = int(child_indices[i])
+        if (node_time[j] <= node_time[k]):
+            print(j, k, node_time[j], node_time[k])
+    for i in range(edge_span.shape[0]):
+        if (edge_span[i, 0] >= edge_span[i, 1]):
+            print(edge_span[i, :])
+    tables.sort()
+    return tables
+
+def read_mutation(tables, mutation_file):
+    mutations = np.loadtxt(mutation_file)
+    n = mutations.shape[0]
+    mut_pos = -1
+    site_id = 0
+    for i in range(n):
+        if mutations[i, 0] != mut_pos and mutations[i, 0] < tables.sequence_length:
+            tables.sites.add_row(position=mutations[i, 0], ancestral_state='0')
+            mut_pos = mutations[i, 0]
+        site_id = tables.sites.num_rows - 1
+        tables.mutations.add_row(site=site_id, node=int(mutations[i, 1]), derived_state=str(int(mutations[i, 3])))
+    return
+
+def read_mts(node_file, branch_file, mutation_file):
+    tables = read_ARG(node_file, branch_file)
+    read_mutation(tables, mutation_file)
+    new_ts = tables.tree_sequence()
+    return new_ts
+
+def polegon_rate_workflow(m, burn_in, num_samples, thin, scaling_rep, input_prefix, output_prefix, max_step, write_samples):
+    old_ts = tskit.load(input_prefix + ".trees")
+    write_arg(old_ts, f"{input_prefix}_nodes.txt", f"{input_prefix}_branches.txt")
+    write_muts(old_ts, f"{input_prefix}_muts.txt")
+    Ne = old_ts.diversity(mode='site')/2/m
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    polegon_binary = os.path.join(script_dir, 'polegon')
+    polegon_command = [polegon_binary, "-m", f"{m}", "-Ne", f"{Ne}", "-burn_in", f"{burn_in}", "-num_samples", f"{num_samples}", "-thin", f"{thin}", "-scaling_rep", f"{scaling_rep}", "-input", f"{input_prefix}", "-output", f"{output_prefix}", "-max_step", f"{max_step}"]
+    if write_samples:
+        polegon_command = polegon_command + ["-write_samples"]
+    print("Run polegon command: " + ' '.join(polegon_command))
+    result = subprocess.run(polegon_command, capture_output=True, text=True)
+    if result.returncode == 0:
+        print("polegon executed successfully")
+        new_ts = read_mts(f"{input_prefix}_new_nodes.txt", f"{input_prefix}_branches.txt", f"{input_prefix}_muts.txt")
+        new_ts.dump(output_prefix + ".trees")
+    else:
+        print("polegon failed")
+    #for f in [f"{input_prefix}_nodes.txt", f"{input_prefix}_branches.txt", f"{input_prefix}_muts.txt", f"{input_prefix}_new_nodes.txt"]:
+        #if os.path.exists(f):
+            #os.remove(f)
+    return
+
+def polegon_map_workflow(mutation_map, burn_in, num_samples, thin, scaling_rep, input_prefix, output_prefix, max_step, write_samples):
+    old_ts = tskit.load(input_prefix + ".trees")
+    write_arg(old_ts, f"{input_prefix}_nodes.txt", f"{input_prefix}_branches.txt")
+    write_muts(old_ts, f"{input_prefix}_muts.txt")
+    m = average_mutation_rate(mutation_map)
+    Ne = old_ts.diversity(mode='site')/2/m
+    script_dir = os.path.dirname(os.path.realpath(__file__))
+    polegon_binary = os.path.join(script_dir, 'polegon')
+    polegon_command = [polegon_binary, "-mutation_map", f"{mutation_map}", "-Ne", f"{Ne}", "-burn_in", f"{burn_in}", "-num_samples", f"{num_samples}", "-thin", f"{thin}", "-scaling_rep", f"{scaling_rep}", "-input", f"{input_prefix}", "-output", f"{output_prefix}", "-max_step", f"{max_step}"]
+    if write_samples:
+        polegon_command = polegon_command = ["-write_samples"]
+    print("Run polegon command: " + ' '.join(polegon_command))
+    result = subprocess.run(polegon_command, capture_output=True, text=True)
+    if result.returncode == 0:
+        print("polegon executed successfully")
+        new_ts = read_mts(f"{input_prefix}_new_nodes.txt", f"{input_prefix}_branches.txt", f"{input_prefix}_muts.txt")
+        new_ts.dump(output_prefix + ".trees")
+    else:
+        print("polegon failed")
+    for f in [f"{input_prefix}_nodes.txt", f"{input_prefix}_branches.txt", f"{input_prefix}_muts.txt", f"{input_prefix}_new_nodes.txt"]:
+        if os.path.exists(f):
+            os.remove(f)
+    return
+
+
+def main():
+    parser = argparse.ArgumentParser(description='Run POLEGON to estimate branch length for ARG with fixed topology.')
+
+    parser.add_argument('-m', type=float, required=False, help='Per bp per generation mutation rate.')
+    parser.add_argument('-mutation_map', type=str, required=False, help="Mutation rate map. ")
+    parser.add_argument('-burn_in', type=float, required=False, default=100, help="Burn-in iterations for MCMC.")
+    parser.add_argument('-num_samples', type=int, required=False, default=100, help='Number of MCMC samples.')
+    parser.add_argument('-scaling_rep', type=int, required=False, default=3, help='Number of re-scaling steps. ')
+    parser.add_argument('-thin', type=int, required=False, default=10, help='Thinning interval length for MCMC.')
+    parser.add_argument('-input', type=str, required=True, help='Input .trees file prefix')
+    parser.add_argument('-output', type=str, required=True, help='Output new .trees prefix')
+    parser.add_argument('-max_step', type=str, required=False, default=10, help="Max step size in MCMC proposal.")
+    parser.add_argument('-write_samples', action='store_true', help='Turn on writing samples.')    
+   
+    if len(sys.argv) == 1:
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+
+    args = parser.parse_args()
+
+    if args.m is None and args.mutation_map is None:
+        parser.error("At least one of '-m' or '-mutation_map' must be provided.")
+
+    if not args.mutation_map is None:
+        polegon_map_workflow(args.mutation_map, args.burn_in, args.num_samples, args.thin, args.scaling_rep, args.input, args.output, args.max_step, args.write_samples)
+    else:
+        polegon_rate_workflow(args.m, args.burn_in, args.num_samples, args.thin, args.scaling_rep, args.input, args.output, args.max_step, args.write_samples)
+
+if __name__ == "__main__":
+    main()

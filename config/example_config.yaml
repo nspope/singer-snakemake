@@ -14,3 +14,13 @@ mcmc-resumes: 1000 # maximum number of times to try to resume MCMC on error at a
 coalrate-epochs: 25 # number of time intervals within which to calculate statistics
 stratify-by: "population" # column in metadata to stratify statistics by, or None (TODO: not implemented)
 random-seed: 1 # random seed
+# Optionally, you can also run Polegon and create a
+run-polegon: False # whether to run Polegon
+# If `use-polegon` is True, Polegon will be run with the following parameters:
+polegon-burnin: 100 # Burn-in iterations for MCMC
+polegon-samples: 100 # Number of MCMC samples
+polegon-scaling-rep: 3 # Number of re-scaling steps
+polegon-thin: 10 # Thinning interval length for MCMC
+polegon-max-step: 10 # Max step size in MCMC proposal
+# TODO: keep MH samples option
+# polegon-write-samples: False # Turn on writing samples, if True, MH samples will also be saved
