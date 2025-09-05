@@ -4,11 +4,12 @@ import tszip
 import gzip
 import os
 import csv
+import demes
 import argparse
 
 docstring = \
 """
-Simulate exapmle inputs for pipeline, with missing data and variable recombination rates.
+Simulate example inputs for pipeline, with missing data and variable recombination rates.
 """
 
 parser = argparse.ArgumentParser()
@@ -135,7 +136,7 @@ if not args.disable_mask:
     bedmask_check = np.loadtxt(mask_path, usecols=[1,2])
     np.testing.assert_allclose(bedmask, bedmask_check)
 
-meta_path =f"{args.output_prefix}.meta.csv"
+meta_path = f"{args.output_prefix}.meta.csv"
 if os.path.exists(meta_path): os.remove(meta_path)
 if not args.disable_meta:
     with open(meta_path, "w") as metafile:
@@ -158,3 +159,5 @@ if not args.disable_filter:
     filter_check = np.loadtxt(filter_path)
     assert np.allclose(filter_check, sitemask)
 
+demog_path = f"{args.output_prefix}.demes.yaml"
+demes.dump(demo.to_demes(), demog_path)

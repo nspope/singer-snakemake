@@ -17,14 +17,14 @@ def tag():
 # --- implm --- #
 
 logfile = snakemake.input.params.replace(".yaml", ".log")
-params = yaml.safe_load(open(snakemake.input.params))
+params = yaml.safe_load(open(snakemake.input.params)).pop("singer")
 seed = params.pop("seed")
 
 invocation = [f"{snakemake.params.singer_binary}"]
 for arg, val in params.items():
     invocation += f"-{arg} {val}".split()
 
-with open(snakemake.log.out, "w") as out, open(snakemake.log.err, "w") as err:
+with open(snakemake.log.log, "w") as log:
     for attempt in range(snakemake.params.mcmc_resumes):
         args = ["-seed", str(seed + attempt)]
         if os.path.exists(logfile):
@@ -36,10 +36,9 @@ with open(snakemake.log.out, "w") as out, open(snakemake.log.err, "w") as err:
                 handle.write("".join(contents[:-1]))
                 handle.close()
                 args.append("-resume")
-        print(f"{tag()}", " ".join(invocation + args), file=out, flush=True)
-        process = subprocess.run(invocation + args, check=False, stdout=out, stderr=err)
+        log.write(f"{tag()} " + " ".join(invocation + args) + "\n")
+        process = subprocess.run(invocation + args, check=False, stdout=log, stderr=log)
         if process.returncode == 0: 
             break
-    print(f"{tag()} SINGER run ended ({process.returncode})", file=out, flush=True)
-
+    log.write(f"{tag()} SINGER run ended ({process.returncode})\n")
 assert process.returncode == 0, f"SINGER terminated with error ({process.returncode})"

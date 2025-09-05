@@ -15,6 +15,8 @@ import json
 import tszip
 from datetime import datetime
 
+from utils import absorb_mutations_above_root
+
 
 # --- lib --- #
 
@@ -38,38 +40,65 @@ def pipeline_provenance(version_string, parameters):
     }
 
 
-def singer_provenance(version_string, parameters):
+def tool_provenance(name, version_string, parameters):
     return {
-        "software": {"name": "singer", "version": version_string},
+        "software": {"name": name, "version": version_string},
         "parameters": parameters,
         "environment": tskit.provenance.get_environment(),
     }
 
 
+def force_positive_branch_lengths(nodes_time, edges_parent, edges_child, min_length=1e-7):
+    adj_nodes_time = nodes_time.copy()
+    #edge_traversal_order = np.argsort(adj_nodes_time[edges_child], kind="stable")
+    # assume that parents come after children in node ordering in SINGER output
+    edge_traversal_order = np.argsort(edges_child)
+    for e in edge_traversal_order:
+        p, c = edges_parent[e], edges_child[e]
+        if adj_nodes_time[p] - adj_nodes_time[c] < min_length:
+            adj_nodes_time[p] = adj_nodes_time[c] + min_length
+    assert np.all(adj_nodes_time[edges_parent] - adj_nodes_time[edges_child] >= min_length)
+    return adj_nodes_time
+
+
+
 # --- implm --- #
 
-min_branch_length = 1e-7  # TODO: make settable?
+min_branch_length = snakemake.params.min_branch_length
 stratify = snakemake.params.stratify
 
-ratemap = pickle.load(open(snakemake.input.ratemap, "rb"))
+logfile = open(snakemake.log.log, "w")
+windows = pickle.load(open(snakemake.input.windows, "rb"))
 metadata = pickle.load(open(snakemake.input.metadata, "rb"))
+alleles = pickle.load(open(snakemake.input.alleles, "rb"))
 
-tables = tskit.TableCollection(sequence_length=ratemap.sequence_length)
+tables = tskit.TableCollection(sequence_length=windows.sequence_length)
 nodes, edges, individuals, populations = \
     tables.nodes, tables.edges, tables.individuals, tables.populations
 
-parameters = []
+tables.metadata_schema = tskit.MetadataSchema.permissive_json()
+nodes.metadata_schema = tskit.MetadataSchema.permissive_json()
+edges.metadata_schema = tskit.MetadataSchema.permissive_json()
+individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
+populations.metadata_schema = tskit.MetadataSchema.permissive_json()
+
+singer_parameters = []
+polegon_parameters = []
 population_map = {}
 num_nodes, num_samples = 0, 0
-files = zip(snakemake.input.params, snakemake.input.recombs)
-for i, (params_file, recomb_file) in enumerate(files):
+files = zip(
+    snakemake.input.params, 
+    snakemake.input.recombs, 
+    snakemake.input.nodes, 
+    snakemake.input.muts, 
+    snakemake.input.branches,
+)
+for i, (params_file, recomb_file, node_file, mutation_file, branch_file) in enumerate(files):
 
-    node_file = recomb_file.replace("_recombs_", "_nodes_")
-    mutation_file = recomb_file.replace("_recombs_", "_muts_")
-    branch_file = recomb_file.replace("_recombs_", "_branches_")
     params = yaml.safe_load(open(params_file))
-    block_start = params['start']
-    parameters.append(params)
+    block_start = params['singer']['start']
+    singer_parameters.append(params['singer'])
+    polegon_parameters.append(params['polegon'])
 
     # nodes
     node_time = np.loadtxt(node_file)
@@ -77,15 +106,13 @@ for i, (params_file, recomb_file) in enumerate(files):
     if individuals.num_rows == 0:
         population = []
         num_samples = np.sum(node_time == 0.0)
-        individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
-        populations.metadata_schema = tskit.MetadataSchema.permissive_json()
         for meta in metadata: 
             individuals.add_row(metadata=meta)
             if stratify in meta:  # recode as integer
                 population_name = meta[stratify] 
                 if not population_name in population_map:
                     population_map[population_name] = len(population_map)
-                    populations.add_row(metadata={"name": population})
+                    populations.add_row(metadata={"name": population_name})
                 population.append(population_map[population_name])
             else:
                 population.append(-1)
@@ -98,14 +125,9 @@ for i, (params_file, recomb_file) in enumerate(files):
                 population=population[individual],
                 individual=individual,
             )
-    min_time = 0
-    for t in node_time:  # NB: nodes are sorted, ascending in time
+    for t in node_time:
         if t > 0.0:
-            #TODO: assertion triggers rarely (FP error?)
-            #assert t >= min_time 
-            t = max(min_time + min_branch_length, t)
             nodes.add_row(time=t)
-            min_time = t
 
     # edges
     edge_span = np.loadtxt(branch_file)
@@ -128,25 +150,21 @@ for i, (params_file, recomb_file) in enumerate(files):
     mut_pos = 0
     for i in range(num_mutations):
         if mutations[i, 0] != mut_pos and mutations[i, 0] < length:
+            site_pos = block_start + mutations[i, 0]
+            site_alleles = alleles[site_pos]
             tables.sites.add_row(
-                position=mutations[i, 0] + block_start,
-                ancestral_state='0',
+                position=site_pos,
+                ancestral_state=site_alleles[0],
             )
             mut_pos = mutations[i, 0]
         site_id = tables.sites.num_rows - 1
         mut_node = int(mutations[i, 1])
-        if (mut_node < num_samples):
-            tables.mutations.add_row(
-                site=site_id, 
-                node=int(mutations[i, 1]), 
-                derived_state=str(int(mutations[i, 3]))
-            ) 
-        else:
-            tables.mutations.add_row(
-                site=site_id, 
-                node=int(mutations[i, 1]) + num_nodes, 
-                derived_state=str(int(mutations[i, 3]))
-            )    
+        mut_state = int(mutations[i, 3])
+        tables.mutations.add_row(
+            site=site_id, 
+            node=mut_node if mut_node < num_samples else mut_node + num_nodes,
+            derived_state=site_alleles[mut_state],
+        ) 
 
 # rebuild mutations table in time order at each position
 mut_time = tables.nodes.time[tables.mutations.node]
@@ -165,6 +183,7 @@ tables.mutations.set_columns(
     derived_state_offset=mut_state_offset,
 )
 
+# add provenance recording how tree sequence was generated
 tables.provenances.add_row(
     json.dumps(
         pipeline_provenance(snakemake.params.version["pipeline"], snakemake.config)
@@ -172,12 +191,62 @@ tables.provenances.add_row(
 )
 tables.provenances.add_row(
     json.dumps(
-        singer_provenance(snakemake.params.version["singer"], parameters)
+        tool_provenance(
+            "singer", 
+            snakemake.params.version["singer"], 
+            singer_parameters,
+        )
+    )
+)
+tables.provenances.add_row(
+    json.dumps(
+        tool_provenance(
+            "polegon", 
+            snakemake.params.version["polegon"], 
+            polegon_parameters,
+        )
     )
 )
 
+# ensure positive branch lengths
+branch_lengths = tables.nodes.time[tables.edges.parent] - tables.nodes.time[tables.edges.child]
+min_branch = branch_lengths.argmin()
+min_obs_branch_length = branch_lengths[min_branch]
+if min_obs_branch_length < min_branch_length:
+    logfile.write(
+        f"{tag()} Minimum branch length is {min_obs_branch_length}, "
+        f"forcing minimum branch lengths of {min_branch_length}\n"
+    )
+    constrained_times = force_positive_branch_lengths(
+        tables.nodes.time, 
+        tables.edges.parent, 
+        tables.edges.child,
+    )
+    altered_nodes = constrained_times != tables.nodes.time
+    assert np.all(constrained_times[altered_nodes] - tables.nodes.time[altered_nodes] > 0)
+    max_alteration = (constrained_times[altered_nodes] - tables.nodes.time[altered_nodes]).max()
+    logfile.write(
+        f"{tag()} Increased ages of {altered_nodes.sum()} nodes, "
+        f"with max increase of {max_alteration} generations\n"
+    )
+    tables.nodes.time = constrained_times
+
+# convert to tree sequence
+logfile.write(f"{tag()} Setting mutation ages to branch midpoints\n")
 tables.sort()
 tables.build_index()
 tables.compute_mutation_parents()
+tables.compute_mutation_times()
 ts = tables.tree_sequence()
+
+# change ancestral state at sites that have had polarisation flipped
+if snakemake.params.repolarise:
+    prev_num_mutations = ts.num_mutations
+    ts = absorb_mutations_above_root(ts)
+    logfile.write(
+        f"{tag()} Absorbed {prev_num_mutations - ts.num_mutations} mutations "
+        f"above the root, switching the ancestral state at these sites\n"
+    )
+
+logfile.write(f"{tag()} Merged tree sequence:\n{ts}\n")
 tszip.compress(ts, snakemake.output.trees)

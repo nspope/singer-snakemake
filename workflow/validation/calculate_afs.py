@@ -1,3 +1,12 @@
+"""
+Calculate the number of mutations in a given AFS bin that arise within a given
+time window, whilst (optionally) integrating over the position of a mutation on
+a branch.  Optionally, AFS bins are down-projected to lower frequencies via
+hypergeometric sampling, which can smooth results for smaller sequence lengths.
+
+Part of https://github.com/nspope/singer-snakemake.
+"""
+
 import numpy as np
 import tszip
 
@@ -9,7 +18,6 @@ from utils import time_windowed_afs
 time_windows = np.append(0, snakemake.params.time_grid)
 project_to = snakemake.params.project_to
 age_unknown = snakemake.params.unknown_mutation_age
-span_normalise = snakemake.params.span_normalise
 
 treefiles = iter(snakemake.input.trees)
 ts = tszip.load(next(treefiles))
@@ -21,7 +29,6 @@ site_afs = time_windowed_afs(
     sample_sets=sample_sets, 
     time_breaks=time_windows, 
     unknown_mutation_age=age_unknown, 
-    span_normalise=span_normalise,
 )
 for trees in treefiles:
     ts = tszip.load(trees)
@@ -31,7 +38,6 @@ for trees in treefiles:
             sample_sets=sample_sets, 
             time_breaks=time_windows, 
             unknown_mutation_age=age_unknown, 
-            span_normalise=span_normalise,
         )
 site_afs /= len(snakemake.input.trees)
 

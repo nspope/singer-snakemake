@@ -1,3 +1,9 @@
+"""
+Utility functions for validation pipeline.
+
+Part of https://github.com/nspope/singer-snakemake.
+"""
+
 import numpy as np
 import tskit
 import msprime
@@ -6,7 +12,12 @@ from scipy.special import comb
 from typing import List
 
 
-def simulate_sequence_mask(ts: tskit.TreeSequence, density: float, length: float, seed: int = None):
+def simulate_sequence_mask(
+    ts: tskit.TreeSequence, 
+    density: float, 
+    length: float, 
+    seed: int = None,
+) -> np.ndarray:
     """
     Simulate a sequence mask by drawing interval locations from a Poisson process
     and interval lengths from a geometric distribution. Any missing flanks
@@ -15,17 +26,22 @@ def simulate_sequence_mask(ts: tskit.TreeSequence, density: float, length: float
     rng = np.random.default_rng(seed)
     bitmask = np.full(int(ts.sequence_length), False)
     left, right = int(ts.edges_left.min()), int(ts.edges_right.max())
-    num_intervals = int(density * (right - left))
-    interval_start = rng.integers(left, right, size=num_intervals)
-    interval_length = rng.geometric(1.0 / length, size=num_intervals)
-    for s, l in zip(interval_start, interval_length):
-        bitmask[s:s+l] = True
     bitmask[:left] = True
     bitmask[right:] = True
+    if length > 0 and density > 0:
+        num_intervals = int(density * (right - left))
+        interval_start = rng.integers(left, right, size=num_intervals)
+        interval_length = rng.geometric(1.0 / length, size=num_intervals)
+        for s, l in zip(interval_start, interval_length):
+            bitmask[s:s+l] = True
     return bitmask
 
 
-def simulate_variant_mask(ts: tskit.TreeSequence, proportion: float, seed: int = None):
+def simulate_variant_mask(
+    ts: tskit.TreeSequence, 
+    proportion: float, 
+    seed: int = None,
+) -> np.ndarray:
     """
     Simulate a variant mask by picking sites uniformly at random.
     """
@@ -34,7 +50,11 @@ def simulate_variant_mask(ts: tskit.TreeSequence, proportion: float, seed: int =
     return bitmask
 
 
-def ratemap_to_hapmap(ratemap: msprime.RateMap, contig_name: str, missing_as_zero: bool = False) -> str:
+def ratemap_to_hapmap(
+    ratemap: msprime.RateMap, 
+    contig_name: str, 
+    missing_as_zero: bool = False,
+) -> str:
     """
     Write a recombination rate map into hapmap format.
     """
@@ -55,7 +75,11 @@ def ratemap_to_hapmap(ratemap: msprime.RateMap, contig_name: str, missing_as_zer
     return hapmap
 
 
-def assert_valid_hapmap(ratemap: msprime.RateMap, hapmap_path: str, ignore_missing: bool = False):
+def assert_valid_hapmap(
+    ratemap: msprime.RateMap, 
+    hapmap_path: str, 
+    ignore_missing: bool = False,
+):
     """
     Check that hapmap file matches rate map.
     """
@@ -109,7 +133,95 @@ def assert_valid_bedmask(bitmask: np.ndarray, bedmask_path: str):
     bitmask_check = np.full_like(bitmask, False)
     bedmask = np.loadtxt(bedmask_path, usecols=[1, 2], dtype=int)
     for a, b in bedmask: bitmask_check[a:b] = True
-    np.testing.assert_allclose(bitmask, bitmask_check)
+    assert np.all(~np.logical_xor(bitmask, bitmask_check))
+
+
+def bed_to_bitmask(bedmask_path: str, bitmask: np.ndarray):
+    """
+    Apply bed to bitmask (modified in place).
+    """
+    if bedmask_path is None: return
+    bedmask = np.loadtxt(bedmask_path, usecols=[1, 2]) 
+    for (a, b) in bedmask.astype(np.int64): bitmask[a:b] = True
+
+
+def simulate_mispolarisation(
+    ts: tskit.TreeSequence,
+    proportion: [str|float],
+    seed: int = None,
+):
+    """
+    Choose which sites to mispolarise. If `proportion` is a float, select sites
+    at random at this proportion.  If `maf`, polarise by major allele. If
+    `ref`, choose a haplotype at random and repolarise any site where it
+    carries the derived allele.
+    """
+    rng = np.random.default_rng(seed)
+    if proportion == "maf":  # set major allele to ancestral
+        variant_frequency = np.zeros(ts.num_sites)
+        for t in ts.trees():
+            for s in t.sites():
+                if len(s.mutations) == 1:
+                    m = next(iter(s.mutations))
+                    variant_frequency[s.id] = t.num_samples(m.node)
+        variant_frequency /= ts.num_samples
+        mispolarise = variant_frequency > 0.5
+    elif proportion == "ref":  # set alleles carried by a random haplotype to ancestral
+        ref = rng.integers(0, ts.num_samples, size=1)
+        mispolarise = np.full(ts.num_sites, False)
+        for t in ts.trees(sample_lists=True):
+            for s in t.sites():
+                if len(s.mutations) == 1:
+                    m = next(iter(s.mutations))
+                    for i in t.samples(m.node):
+                        if i == ref:
+                            mispolarise[s.id] = True
+    elif proportion == "frq":  # set alleles ancestral with prop equal to their frequency
+        variant_frequency = np.zeros(ts.num_sites)
+        for t in ts.trees():
+            for s in t.sites():
+                if len(s.mutations) == 1:
+                    m = next(iter(s.mutations))
+                    variant_frequency[s.id] = t.num_samples(m.node)
+        variant_frequency /= ts.num_samples
+        mispolarise = rng.binomial(1, variant_frequency) > 0
+    else:  # set a random proportion of alleles to ancestral
+        assert 0 <= proportion <= 1
+        mispolarise = rng.binomial(1, proportion, size=ts.num_sites) > 0
+    return mispolarise
+
+
+def repolarise_tree_sequence(
+    ts: tskit.TreeSequence, 
+    repolarise: np.ndarray,
+) -> tskit.TreeSequence:
+    """
+    Flip polarisation of site if `repolarise[site.id]`. Skip multiallelic and
+    nonsegregating sites.
+    """
+    assert repolarise.size == ts.num_sites
+    tab = ts.dump_tables()
+    tab.mutations.clear()
+    tab.sites.clear()
+    tree = ts.first()
+    for site in ts.sites():
+        tree.seek(site.position)
+        biallelic = len(site.mutations) == 1
+        if repolarise[site.id] and biallelic:
+            mutation = next(iter(site.mutations))
+            for r in tree.roots:
+                tab.mutations.add_row(site=site.id, node=r, derived_state=site.ancestral_state)
+            tab.sites.add_row(position=site.position, ancestral_state=mutation.derived_state)
+        else:
+            tab.sites.add_row(position=site.position, ancestral_state=site.ancestral_state)
+        for mutation in site.mutations:
+            tab.mutations.add_row(site=mutation.site, node=mutation.node, derived_state=mutation.derived_state)
+    tab.sort()
+    tab.build_index()
+    tab.compute_mutation_parents()
+    assert tab.sites.num_rows == ts.num_sites
+    assert np.all(tab.sites.position == ts.sites_position)
+    return tab.tree_sequence()
 
 
 def hypergeometric_probabilities(input_dim: int, output_dim: int) -> np.ndarray:
@@ -132,12 +244,14 @@ def hypergeometric_probabilities(input_dim: int, output_dim: int) -> np.ndarray:
 
 def mutation_edge_and_frequency(
     ts: tskit.TreeSequence,
-    sample_sets: List[List[int]], 
+    sample_sets: List[List[int]] = None, 
 ) -> (np.ndarray, np.ndarray):
     """
-    Return mutation frequency in each sample set and the id of the
-    edge carrying the mutation.
+    Return mutation frequency (number of carriers) in each sample set and the
+    id of the edge carrying the mutation.
     """
+    if sample_sets is None:
+        sample_sets = [list(ts.samples())]
     mutation_edge = np.full(ts.num_mutations, tskit.NULL)
     mutation_freq = np.full((ts.num_mutations, len(sample_sets)), tskit.NULL)
     for i, s in enumerate(sample_sets):
@@ -148,18 +262,38 @@ def mutation_edge_and_frequency(
     return mutation_edge, mutation_freq
 
 
+def ancestral_state_and_frequency(
+    ts: tskit.TreeSequence,
+    sample_sets: List[List[int]] = None, 
+) -> (np.ndarray, np.ndarray):
+    """
+    Return ancestral state of each site and its frequency (number of carriers)
+    in each sample set.
+    """
+    if sample_sets is None:
+        sample_sets = [list(ts.samples())]
+    state = np.empty(ts.num_sites, dtype=object)
+    freq = np.full((ts.num_sites, len(sample_sets)), tskit.NULL)
+    for i, s in enumerate(sample_sets):
+        for v in ts.variants(samples=s):
+            uid, anc = v.site.id, v.site.ancestral_state
+            state[uid] = anc
+            freq[uid, i] = v.counts()[anc]
+    return state, freq
+
+
 def time_windowed_afs(
     ts: tskit.TreeSequence, 
     sample_sets: List[List[int]], 
     time_breaks: np.ndarray,
     unknown_mutation_age: bool = True,
-    span_normalise: bool = True,
 ) -> np.ndarray:
     """
     Calculate observed allele frequency spectrum in time windows. If the age of
     mutations is unknown, then integrate over mutation positions on a branch,
     such that the contribution of a mutation on a given edge to a given time
-    window is `(edge_overlap_with_window / length_of_edge)`.
+    window is `(edge_overlap_with_window / length_of_edge)`. Only sites carrying a
+    single mutation are used.
 
     Output shape is `(sfs_dimensions, num_time_windows)`.
     """
@@ -172,6 +306,7 @@ def time_windowed_afs(
     # remove mutations mapped above root
     keep = edge != tskit.NULL
     edge, frequency = edge[keep], frequency[keep]
+    assert np.all(frequency != tskit.NULL)
 
     # find time window per mutation
     node_below = ts.edges_child[edge]
@@ -203,9 +338,6 @@ def time_windowed_afs(
         for t, f in zip(time_index, frequency): 
             afs[*f][t] += 1.0
 
-    if span_normalise:
-        afs /= ts.sequence_length
-
     return afs
 
 
@@ -213,15 +345,15 @@ def time_windowed_relatedness(
     ts: tskit.TreeSequence,
     time_breaks: np.ndarray,
     unknown_mutation_age: bool = True,
-    span_normalise: bool = False,
     for_individuals: bool = True,
 ):
     """
-    Calculate observed genetic relatedness (the average number of shared mutations
-    between pairs of haplotypes) in time windows. If the age of mutations is unknown,
-    then integrate over mutation positions on a branch, such that the
-    contribution of a mutation on a given edge to a given time window is
-    `(edge_overlap_with_window / length_of_edge)`.
+    Calculate observed genetic relatedness (the average number of shared
+    mutations between pairs of haplotypes) in time windows. If the age of
+    mutations is unknown, then integrate over mutation positions on a branch,
+    such that the contribution of a mutation on a given edge to a given time
+    window is `(edge_overlap_with_window / length_of_edge)`. Only sites carrying a
+    single mutation are used.
 
     Output shape is `(num_samples, num_samples, num_time_windows)` or
     `(num_individuals, num_individuals, num_time_windows)` if `for_individuals`.
@@ -229,14 +361,8 @@ def time_windowed_relatedness(
     assert time_breaks[0] == 0.0 and time_breaks[-1] == np.inf
     assert np.all(np.diff(time_breaks) > 0)
 
-    # find mutation mapping to edge
-    span = 0.0
-    edge = np.full(ts.num_mutations, tskit.NULL)
-    for t in ts.trees():
-        if t.num_edges: 
-            span += t.span
-        for m in t.mutations():
-            edge[m.id] = m.edge
+    # find mutation mapping to edge 
+    edge, _ = mutation_edge_and_frequency(ts)
     keep = edge != tskit.NULL
 
     # find time windows of edge endpoints
@@ -279,9 +405,6 @@ def time_windowed_relatedness(
                     u = time_index[i]
                     s = list(t.samples(m.node))
                     relatedness[u][np.ix_(s, s)] += 1.0
-
-    if span_normalise:
-        relatedness /= span
 
     if for_individuals:  # average over haplotypes for pairs of individuals
         individual_map = np.zeros((ts.num_individuals, ts.num_samples))

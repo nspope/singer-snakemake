@@ -30,9 +30,7 @@ def tag():
 num_intervals = snakemake.params.coalrate_epochs
 num_mcmc = snakemake.params.mcmc_samples
 num_burnin = snakemake.params.mcmc_burnin
-
-ratemap = pickle.load(open(snakemake.input.ratemap, "rb"))
-windows = ratemap.position
+windows = pickle.load(open(snakemake.input.windows, "rb")).position
 
 
 # cross coalescence between strata

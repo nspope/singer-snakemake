@@ -6,9 +6,11 @@ A small (but equally spaced) subset of individuals are plotted.
 """
 
 import numpy as np
+import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FixedLocator
 
+matplotlib.rcParams["figure.dpi"] = 300
 
 time_grid = np.append(0, snakemake.params.time_grid[:-1])
 reference_rel = np.load(next(iter(snakemake.input.true_site_relatedness)))[..., 0]
@@ -36,6 +38,7 @@ fig, axs = plt.subplots(
     sharex=True, sharey=True, 
     squeeze=False,
 )
+scale = 1e-3
 midpoints = (time_grid[:-1] + time_grid[1:]) / 2
 for i, ii in enumerate(subset):
     for j, jj in enumerate(subset):
@@ -46,15 +49,15 @@ for i, ii in enumerate(subset):
             true = true_rel[ii, jj].cumsum()
             infr = infr_rel[ii, jj].cumsum()
             axs[i, j].text(0.05, 0.95, label, ha="left", va="top", transform=axs[i, j].transAxes, size=8)
-            axs[i, j].plot(time_grid, true, "-", color="black", label="true", linewidth=1)
-            axs[i, j].plot(time_grid, infr, "-", color="firebrick", label="estimated", linewidth=1)
+            axs[i, j].plot(time_grid, scale * true, "-", color="black", label="true", linewidth=1)
+            axs[i, j].plot(time_grid, scale * infr, "-", color="firebrick", label="estimated", linewidth=1)
             axs[i, j].set_xscale("log")
             if snakemake.params.log_relatedness:
                 axs[i, j].set_yscale("log")
             if i == j:
                 axs[i, j].tick_params(axis="both", labelbottom=True, labelleft=True)
                 #axs[i, j].ticklabel_format(axis="y", style="sci", scilimits=(-1, 1))
-fig.supylabel("Average number of shared mutations")
+fig.supylabel("Number of shared derived mutations (thousands)")
 fig.supxlabel("Maximum mutation age")
 fig.legend(
     *axs[0, 0].get_legend_handles_labels(), 
