@@ -8,3 +8,10 @@ output/*
 .test-workflow/diploid*
 .test-workflow/haploid*
 __pycache__/
+
+# misc outputs from debugging
+debug-*/
+results-*/
+output-*/
+validation-*/
+TODO

@@ -2,8 +2,10 @@ tskit @ git+https://github.com/tskit-dev/tskit.git#subdirectory=python
 tszip
 snakemake>=8.0.0
 stdpopsim>=0.3.0
+demes
 msprime
 scikit-allel
+scipy
 numpy
 pyyaml
 matplotlib

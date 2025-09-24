@@ -1,3 +1,5 @@
+# FIXME: config is out of date for v0.1.1
+
 # some minimal test cases with optional inputs
 
 mkdir -p diploid

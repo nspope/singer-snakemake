@@ -1,5 +1,6 @@
 """
-Calculate some branch statistics from a tree sequence.
+Calculate branch statistics from a tree sequence.  This is done via simulation,
+so as to account for missing data without excessive windowing.
 
 Part of https://github.com/nspope/singer-snakemake.
 """
@@ -14,6 +15,8 @@ import itertools
 from collections import defaultdict
 from datetime import datetime
 
+from utils import mutational_load
+
 
 # --- lib --- #
 
@@ -23,40 +26,69 @@ def tag():
 
 # --- implm --- #
 
+windows = pickle.load(open(snakemake.input.windows, "rb"))
+adjusted_mu = pickle.load(open(snakemake.input.mut_rate, "rb"))
 inaccessible = pickle.load(open(snakemake.input.inaccessible, "rb"))
-filtered = pickle.load(open(snakemake.input.filtered, "rb"))
-mutation_rate = snakemake.params.mutation_rate
-chunk_size = np.diff(inaccessible.position)
-accessible_size = chunk_size * (1 - inaccessible.rate)
-ts = tszip.decompress(snakemake.input.trees)
+alleles = pickle.load(open(snakemake.input.alleles, "rb"))
+trees = tszip.decompress(snakemake.input.trees) 
+seed = 1 + int(snakemake.wildcards.rep) * 1000
 
-diversity = \
-    ts.diversity(mode='branch', windows=inaccessible.position, span_normalise=True) * \
-    (1 - filtered.rate) * mutation_rate
-diversity[inaccessible.rate == 1.0] = np.nan
+accessible = msprime.RateMap(
+    position=inaccessible.position,
+    rate=1 - inaccessible.rate,
+)
+accessible_bp = np.diff(accessible.get_cumulative_mass(windows.position))
 
-# NB: these are per-chunk; correctly calculating at the sequence level
-# would require calculating numerator and denominator separately, correcting,
-# and summing across chunks
-tajima_d = ts.Tajimas_D(mode='branch', windows=inaccessible.position)  # correction cancels within chunk
-tajima_d[inaccessible.rate == 1.0] = np.nan
+# statistics that depend on observed sites
+repolarised = np.mean([s.ancestral_state != alleles[s.position][0] for s in trees.sites()])
+multimapped = np.mean(np.bincount(trees.mutations_site, minlength=trees.num_sites))
+# TODO: split by input frequency?
 
-# NB: "global" statistics have to be weighted by accessible sequence length per chunk
-correction = (1 - filtered.rate) * accessible_size / np.sum(accessible_size)
+# if there is no polarisation (or ascertainment) bias, then the number of mutations
+# carried by each haplotype should be equal on average because the root-to-leaf length
+# is the same across all leaves. 
+observed_load = mutational_load(trees)
+observed_load /= np.sum(accessible_bp)
 
-folded_afs = \
-    ts.allele_frequency_spectrum(mode='branch', windows=inaccessible.position, span_normalise=True)
-folded_afs = np.sum(folded_afs * correction[:, np.newaxis] * mutation_rate, axis=0)
+# simulate mutations given ARG topology and mask for posterior predictive checks
+ts = msprime.sim_mutations(
+    trees,
+    rate=adjusted_mu, 
+    random_seed=seed, 
+    keep=False,
+)
 
-unfolded_afs = \
-    ts.allele_frequency_spectrum(mode='branch', windows=inaccessible.position, span_normalise=True, polarised=True) 
-unfolded_afs = np.sum(unfolded_afs * correction[:, np.newaxis] * mutation_rate, axis=0)
+diversity = ts.diversity(
+    mode='site', 
+    windows=windows.position, 
+    span_normalise=False,
+)
+diversity[windows.rate == 1.0] /= accessible_bp[windows.rate == 1.0]
+diversity[windows.rate == 0.0] = np.nan
+
+tajima_d = ts.Tajimas_D(
+    mode='site', 
+    windows=windows.position, 
+)
+tajima_d[windows.rate == 0.0] = np.nan
+
+afs = ts.allele_frequency_spectrum(
+    mode='site', 
+    span_normalise=False,
+    polarised=snakemake.params.polarised,
+) / accessible_bp[windows.rate == 1.0].sum()
+
+expected_load = mutational_load(ts)
+expected_load /= np.sum(accessible_bp)
 
 stats = {
+    "repolarised": repolarised,
+    "multimapped": multimapped,
+    "observed_load": observed_load,
+    "expected_load": expected_load,
     "diversity": diversity, 
     "tajima_d": tajima_d, 
-    "folded_afs": folded_afs, 
-    "unfolded_afs": unfolded_afs,
+    "afs": afs, 
 }
 pickle.dump(stats, open(snakemake.output.stats, "wb"))
 
@@ -65,39 +97,39 @@ pickle.dump(stats, open(snakemake.output.stats, "wb"))
 # stratified summary stats
 strata_stats = {}
 if snakemake.params.stratify is not None:
-    sample_sets = defaultdict(list)
-    for ind in ts.individuals():
-        strata = ind.metadata[snakemake.params.stratify]
-        sample_sets[strata].extend(ind.nodes)
-    strata = [n for n in sample_sets.keys()]
+    sample_sets = {
+        p.metadata["name"]: ts.samples(population=i) 
+        for i, p in enumerate(ts.populations())
+        if len(ts.samples(population=i))
+    }
+    strata = list(sorted(sample_sets.keys()))
+    sample_sets = [sample_sets[x] for x in strata]
     strata_stats["strata"] = strata
+    indexes = list(itertools.combinations_with_replacement(range(len(strata)), 2))
 
-    strata_divergence = \
-        ts.divergence(
-            sample_sets=[s for s in sample_sets.values()], 
-            indexes=list(itertools.combinations_with_replacement(range(len(strata)), 2)),
-            mode='branch', windows=inaccessible.position, span_normalise=True,
-        ) * (1 - filtered.rate)[:, np.newaxis] * mutation_rate
-    strata_divergence[inaccessible.rate == 0.0] = np.nan
+    strata_divergence = ts.divergence(
+        # FIXME: this is a workaround for bug already fixed in tskit
+        # https://github.com/tskit-dev/tskit/pull/3235, delete at some point
+        sample_sets=sample_sets if len(sample_sets) > 1 else sample_sets * 2,
+        indexes=indexes,
+        mode='site',
+        windows=windows.position,
+        span_normalise=False,
+    )
+    strata_divergence[windows.rate == 1.0] /= \
+        accessible_bp[windows.rate == 1.0, np.newaxis]
+    strata_divergence[windows.rate == 0.0] = np.nan
     strata_stats["divergence"] = strata_divergence
 
-    strata_folded_afs = []
-    for strata, sample_set in sample_sets.items():
-        folded_afs = ts.allele_frequency_spectrum(
-            sample_sets=[sample_set], mode='branch', 
-            windows=inaccessible.position, span_normalise=True,
-        )
-        folded_afs = np.sum(folded_afs * correction[:, np.newaxis] * mutation_rate, axis=0)
-        strata_folded_afs.append(folded_afs)
-    strata_stats["folded_afs"] = strata_folded_afs
+    strata_afs = []
+    for sample_set in sample_sets:
+        afs = ts.allele_frequency_spectrum(
+            sample_sets=[sample_set], 
+            mode='site', 
+            polarised=snakemake.params.polarised,
+            span_normalise=False,
+        ) / accessible_bp[windows.rate == 1.0].sum()
+        strata_afs.append(afs)
+    strata_stats["afs"] = strata_afs
 
-    strata_unfolded_afs = []
-    for strata, sample_set in sample_sets.items():
-        unfolded_afs = ts.allele_frequency_spectrum(
-            sample_sets=[sample_set], mode='branch', polarised=True,
-            windows=inaccessible.position, span_normalise=True,
-        )
-        unfolded_afs = np.sum(unfolded_afs * correction[:, np.newaxis] * mutation_rate, axis=0)
-        strata_unfolded_afs.append(unfolded_afs)
-    strata_stats["unfolded_afs"] = strata_unfolded_afs
 pickle.dump(strata_stats, open(snakemake.output.strata_stats, "wb"))
