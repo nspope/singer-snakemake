@@ -1,0 +1,15 @@
+time_units: generations
+generation_time: 1
+demes:
+- name: pop_0
+  epochs:
+  - {end_time: 0, start_size: 10000.0}
+- name: pop_1
+  epochs:
+  - {end_time: 0, start_size: 10000.0}
+- name: pop_2
+  epochs:
+  - {end_time: 0, start_size: 10000.0}
+migrations:
+- demes: [pop_0, pop_1, pop_2]
+  rate: 1e-05

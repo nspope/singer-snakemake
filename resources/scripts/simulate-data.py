@@ -31,6 +31,8 @@ args = parser.parse_args()
 
 rng = np.random.default_rng(args.seed)
 
+dir_name = os.path.dirname(args.output_prefix)
+if not os.path.exists(dir_name): os.makedirs(dir_name)
 
 # linearly increasing recombination rate
 recmap_pos = np.linspace(0, args.sequence_length, 1001)
@@ -72,6 +74,16 @@ while ts.sequence_length - end > 1e3:
     end = rng.integers(start, min(start + 1e3, ts.sequence_length))
     bedmask.append([start, end])
 bedmask = np.array(bedmask)
+# add some large gaps on top of the sporadic missingness
+gaps = np.array([
+    [0.03, 0.08], 
+    [0.14, 0.19], 
+    [0.25, 0.30], 
+    [0.36, 0.41], 
+    [0.47, 0.52],
+]) * ts.sequence_length
+bedmask = np.concatenate([bedmask, gaps], axis=0).astype(int)
+# convert to bitmask
 bitmask = np.full(int(recmap.sequence_length) + 1, False)
 for a, b in bedmask: bitmask[a:b] = True
 
