@@ -7,7 +7,7 @@ import msprime
 import pytest
 from workflow.validation.utils import repolarise_tree_sequence
 from workflow.validation.utils import simulate_mispolarisation
-from workflow.utils import absorb_mutations_above_root
+from workflow.scripts.utils import absorb_mutations_above_root
 
 
 def test_repolarise_tree_sequence():
@@ -94,16 +94,16 @@ def test_major_allele_repolarisation():
 #          <-------------> gap
 
 
-def find_genealogical_gaps(ts, accessible_ratemap):
+def find_genealogical_gaps(ts, interval_breakpoints, interval_is_gap):
     """
     Find intervals in `accessible_ratemap` that have zero rate and across which
     no edges persist. If this condition is true, then the maximum of
     `ts.edges_right` for all edges to the left of the start of the gap will
     fall within the gap.
     """
-    interval_breakpoints = accessible_ratemap.position
-    prop_accessible = accessible_ratemap.rate
-    interval_is_gap = np.logical_or(prop_accessible == 0.0, np.isnan(prop_accessible))
+    #interval_breakpoints = accessible_ratemap.position
+    #prop_accessible = accessible_ratemap.rate
+    #interval_is_gap = np.logical_or(prop_accessible == 0.0, np.isnan(prop_accessible))
     # TODO pass in the above
     num_intervals = interval_is_gap.size
     left, right = interval_breakpoints[:-1], interval_breakpoints[1:]
@@ -127,19 +127,23 @@ def check_interval_edge_overlap(ts, interval_breakpoints, interval_is_gap):
     """
     sort_order = np.argsort(ts.edges_left) 
     left_index = np.digitize(ts.edges_left[sort_order], interval_breakpoints) - 1
-    right_index = np.digitize(ts.edges_right[sort_order], interval_breakpoints) - 1
-    for a, b in zip(left_index, right_index):
+    right_index = np.digitize(ts.edges_right[sort_order], interval_breakpoints, right=True) - 1
+    for i, (a, b) in enumerate(zip(left_index, right_index)):
         assert a >= 0 and b < interval_is_gap.size
         assert a <= b
-        if a != b:
-            is_gap = edge_is_gap[left_index:right_index + 1]
-            if np.sum(is_gap[1:] != is_gap[:-1]) < 2:
-                return False
+        print(ts.edges_left[sort_order][i], ts.edges_right[sort_order][i], left_index[i], right_index[i])
+        #if a != b:
+        #    is_gap = interval_is_gap[a:b + 1]
+        #    if np.sum(is_gap[1:] != is_gap[:-1]) < 2:
+        #        return False
     return True
 
 
 def test_find_genealogical_gaps():
-    pass
+    ts = msprime.sim_ancestry(10, population_size=1e4, recombination_rate=1e-8, sequence_length=1e5)
+    breaks = np.array([0, 50000, 60000, ts.sequence_length])
+    is_gap = np.array([False, True, False])
+    print(check_interval_edge_overlap(ts, breaks, is_gap))
 
 
 # readme sketch:
