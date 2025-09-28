@@ -476,8 +476,8 @@ for i in np.flatnonzero(filter_chunks):
     mutation_map_path = f"{chunk_path}.mut"
     recombination_map_path = f"{chunk_path}.rec"
     singer_params = {
-        "thin": int(snakemake.params.mcmc_thin), 
-        "n": int(snakemake.params.mcmc_samples),
+        "thin": int(snakemake.params.singer_mcmc_thin), 
+        "n": int(snakemake.params.singer_mcmc_samples),
         "Ne": float(Ne),
         "m": str(0.0),    # NB: SINGER expects these arguments and toggles
         "r": float(0.0),  # off map usage if at least one is positive
