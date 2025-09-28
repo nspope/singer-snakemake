@@ -16,6 +16,7 @@ import tszip
 from datetime import datetime
 
 from utils import absorb_mutations_above_root
+from utils import find_genealogical_gaps
 
 
 # --- lib --- #
@@ -71,8 +72,10 @@ logfile = open(snakemake.log.log, "w")
 chunks = pickle.load(open(snakemake.input.chunks, "rb"))
 metadata = pickle.load(open(snakemake.input.metadata, "rb"))
 alleles = pickle.load(open(snakemake.input.alleles, "rb"))
+inaccessible = pickle.load(open(snakemake.input.inaccessible, "rb"))
 
 tables = tskit.TableCollection(sequence_length=chunks.sequence_length)
+tables.time_units = "generations"
 nodes, edges, individuals, populations = \
     tables.nodes, tables.edges, tables.individuals, tables.populations
 
@@ -247,6 +250,47 @@ if snakemake.params.repolarise:
         f"{tag()} Absorbed {prev_num_mutations - ts.num_mutations} mutations "
         f"above the root, switching the ancestral state at these sites\n"
     )
+
+# delete masked intervals that are not spanned by any edge
+if snakemake.params.delete_genealogical_gaps:
+    genealogical_gaps = find_genealogical_gaps(
+        ts,
+        inaccessible.position,
+        inaccessible.rate == 1.0,
+    )
+    if genealogical_gaps.size:
+        masked_bases = int(np.diff(genealogical_gaps, axis=-1).sum())
+        logfile.write(
+            f"{tag()} Removing {genealogical_gaps.shape[0]} masked intervals that "
+            f"are not spanned by an edge, totalling {masked_bases} bases\n"
+        )
+        prev_num_edges, prev_num_trees = ts.num_edges, ts.num_trees
+        ts = ts.delete_intervals(genealogical_gaps)
+        logfile.write(
+            f"{tag()} Deleting these genealogical gaps changed the number of edges from "
+            f"{prev_num_edges} to {ts.num_edges} and the number of trees from "
+            f"{prev_num_trees} to {ts.num_trees}\n"
+        )
+
+# delete all masked intervals (for debugging purposes)
+if snakemake.params.delete_masked_intervals:
+    masked_gaps = np.stack([
+        inaccessible.left[inaccessible.rate == 1.0],
+        inaccessible.right[inaccessible.rate == 1.0],
+    ], axis=-1)
+    if masked_gaps.size:
+        masked_bases = int(np.diff(masked_gaps, axis=-1).sum())
+        logfile.write(
+            f"{tag()} Removing {masked_gaps.shape[0]} masked intervals "
+            f"totalling {masked_bases} bases\n"
+        )
+        prev_num_edges, prev_num_trees = ts.num_edges, ts.num_trees
+        ts = ts.delete_intervals(masked_gaps)
+        logfile.write(
+            f"{tag()} Removing all masked intervals changed the number of edges from "
+            f"{prev_num_edges} to {ts.num_edges} and the number of trees from "
+            f"{prev_num_trees} to {ts.num_trees}\n"
+        )
 
 logfile.write(f"{tag()} Merged tree sequence:\n{ts}\n")
 tszip.compress(ts, snakemake.output.trees)

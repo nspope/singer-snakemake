@@ -458,7 +458,10 @@ pickle.dump(filtered, open(snakemake.output.filtered, "wb"))
 pickle.dump(chunks, open(snakemake.output.chunks, "wb"))
 pickle.dump(stats_windows, open(snakemake.output.windows, "wb"))
 
-# FIXME: TODO: summary of issues with ratemaps goes here
+# FIXME: there is a bug in SINGER where fine-scale rate maps are never used
+# and the mean rate is used instead. When this is fixed, explore using
+# fine-scale rate maps (these may be problematic with zero rates). In the
+# meantime, we explicitly use mean rates.
 
 # dump SINGER parameters for each chunk
 chunks_dir = snakemake.output.chunks_dir
@@ -479,14 +482,13 @@ for i in np.flatnonzero(filter_chunks):
         "thin": int(snakemake.params.singer_mcmc_thin), 
         "n": int(snakemake.params.singer_mcmc_samples),
         "Ne": float(Ne),
-        "m": str(0.0),    # NB: SINGER expects these arguments and toggles
-        "r": float(0.0),  # off map usage if at least one is positive
-        "mut_map": str(mutation_map_path),
-        "recomb_map": str(recombination_map_path),
-        # TODO: alternatively, use mean rates?
-        # FIXME: there is a bug in SINGER so that it is using mean rates anyway, might as well make it explicit
-        #"m": float(mut.mean_rate),
-        #"r": float(rec.mean_rate),
+        # "m": str(0.0),    # NB: SINGER expects these arguments and toggles
+        # "r": float(0.0),  # off map usage if at least one is positive
+        # "mut_map": str(mutation_map_path),
+        # "recomb_map": str(recombination_map_path),
+        # see comment above
+        "m": float(mut.mean_rate),
+        "r": float(rec.mean_rate),
         "input": str(vcf_prefix), 
         "start": int(start), 
         "end": int(end), 

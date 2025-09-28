@@ -240,6 +240,7 @@ rule merge_chunks:
     """
     input:
         chunks = rules.chunk_chromosomes.output.chunks,
+        inaccessible = rules.chunk_chromosomes.output.inaccessible,
         metadata = rules.chunk_chromosomes.output.metadata,
         alleles = rules.chunk_chromosomes.output.alleles,
         params = merge_chunks_params,
@@ -257,6 +258,8 @@ rule merge_chunks:
         version = {"pipeline": VERSION, "singer": SINGER_VERSION, "polegon": POLEGON_VERSION},
         # for debugging:
         repolarise = config.get("repolarise-ancestral-state", True),
+        delete_genealogical_gaps = config.get("delete-genealogical-gaps", True),
+        delete_masked_intervals = config.get("delete-masked-intervals", False),
     script:
         "scripts/merge_chunks.py"
         

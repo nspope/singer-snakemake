@@ -16,7 +16,7 @@ research, so *caveat emptor*.
 
 ### Dependencies
 
-Using `git` and `mamba` and `pip`:
+Using `git` and `mamba`:
 
 ```bash
 git clone https://github.com/nspope/singer-snakemake my-singer-run && cd my-singer-run
