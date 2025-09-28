@@ -68,11 +68,11 @@ min_branch_length = snakemake.params.min_branch_length
 stratify = snakemake.params.stratify
 
 logfile = open(snakemake.log.log, "w")
-windows = pickle.load(open(snakemake.input.windows, "rb"))
+chunks = pickle.load(open(snakemake.input.chunks, "rb"))
 metadata = pickle.load(open(snakemake.input.metadata, "rb"))
 alleles = pickle.load(open(snakemake.input.alleles, "rb"))
 
-tables = tskit.TableCollection(sequence_length=windows.sequence_length)
+tables = tskit.TableCollection(sequence_length=chunks.sequence_length)
 nodes, edges, individuals, populations = \
     tables.nodes, tables.edges, tables.individuals, tables.populations
 

@@ -76,6 +76,7 @@ tab.edges.right = accessible.get_cumulative_mass(tab.edges.right)
 tab.edges.keep_rows(tab.edges.right > tab.edges.left)
 ts = tab.tree_sequence().trim()
 # TODO: functionalize and unit test the above
+# TODO: the "weighted_xxxx" wrapper is unnecessary now
 
 # global pair coalescence rates
 sample_sets = [list(ts.samples())]

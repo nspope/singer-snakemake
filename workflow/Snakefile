@@ -31,6 +31,7 @@ POLARISED = bool(config["polarised"])
 MUTATION_RATE = float(config["mutation-rate"])
 RECOMBINATION_RATE = float(config["recombination-rate"])
 RAND_SEED = int(config["random-seed"])
+STRATIFY_BY = config["stratify-by"]
 
 MAX_CHUNK_SIZE = float(config["max-chunk-size"])
 MIN_CHUNK_SIZE = float(config["min-chunk-size"])
@@ -55,7 +56,7 @@ assert POLEGON_MCMC_SAMPLES > 0, "Number of POLEGON MCMC samples must be nonzero
 assert POLEGON_MCMC_BURNIN < POLEGON_MCMC_SAMPLES, "Burn-in exceeds number of POLEGON MCMC samples"
 
 COALRATE_EPOCHS = int(config["coalrate-epochs"])
-STRATIFY_BY = None if config["stratify-by"] == "None" else config["stratify-by"]
+STATS_WINDOW_SIZE = float(config["stats-window-size"])
 
 SINGER_BINARY = os.path.join(
    workflow.basedir, os.path.pardir, "resources", 
@@ -116,7 +117,7 @@ checkpoint chunk_chromosomes:
     input: 
         vcf = os.path.join(INPUT_DIR, "{chrom}.vcf.gz"),
     output:
-        chunks = directory(CHUNK_PATH),
+        chunks_dir = directory(CHUNK_PATH),
         # TODO: mark VCF temp, but need to include as input to SINGER to make persistant
         vcf = os.path.join(CHROM_PATH, "{chrom}.vcf"),
         vcf_stats = os.path.join(CHROM_PATH, "{chrom}.vcf.stats.p"),
@@ -126,6 +127,7 @@ checkpoint chunk_chromosomes:
         inaccessible = os.path.join(CHROM_PATH, "{chrom}.inaccessible.p"),
         filtered = os.path.join(CHROM_PATH, "{chrom}.filtered.p"),
         metadata = os.path.join(CHROM_PATH, "{chrom}.vcf.samples.p"),
+        chunks = os.path.join(CHROM_PATH, "{chrom}.chunks.p"),
         windows = os.path.join(CHROM_PATH, "{chrom}.windows.p"),
         alleles = os.path.join(CHROM_PATH, "{chrom}.alleles.p"),
         site_density = os.path.join(PLOTS_PATH, "site-density.png"), 
@@ -142,6 +144,7 @@ checkpoint chunk_chromosomes:
         recombination_rate = RECOMBINATION_RATE,
         polarised = POLARISED,
         stratify = STRATIFY_BY,
+        stats_window_size = STATS_WINDOW_SIZE,
         mcmc_samples = SINGER_MCMC_SAMPLES,
         mcmc_thin = SINGER_MCMC_THIN,
         polegon_mcmc_samples = POLEGON_MCMC_SAMPLES,
@@ -213,7 +216,7 @@ rule run_polegon:
 
 
 def merge_chunks_params(wildcards):
-    dir = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks
+    dir = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks_dir
     out = expand(
         os.path.join(dir, "{id}.yaml"),
         id=glob_wildcards(os.path.join(dir, "{id}.yaml")).id
@@ -222,7 +225,7 @@ def merge_chunks_params(wildcards):
 
 
 def merge_chunks_input(wildcards, regex):
-    dir = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks
+    dir = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks_dir
     out = expand(
         os.path.join(dir, f"{{id}}_{regex}_{{rep}}.txt"),
         rep=wildcards.rep,
@@ -236,7 +239,7 @@ rule merge_chunks:
     Merge chunks into a single tree sequence.
     """
     input:
-        windows = rules.chunk_chromosomes.output.windows,
+        chunks = rules.chunk_chromosomes.output.chunks,
         metadata = rules.chunk_chromosomes.output.metadata,
         alleles = rules.chunk_chromosomes.output.alleles,
         params = merge_chunks_params,
@@ -256,27 +259,6 @@ rule merge_chunks:
         repolarise = config.get("repolarise-ancestral-state", True),
     script:
         "scripts/merge_chunks.py"
-
-
-#rule run_polegon:
-#    """
-#    Run POLEGON to date chromosome, using a fine-scale mutation rate map that models
-#    masked sequence.
-#    """
-#    input:
-#        trees = rules.merge_chunks.output.trees,
-#        mut_map = rules.chunk_chromosomes.output.mut_map,
-#        params = rules.chunk_chromosomes.output.polegon_params,
-#    output:
-#        trees = os.path.join(TREES_PATH, "{chrom}.{rep}.tsz"),
-#    params:
-#        polegon_binary = POLEGON_BINARY,
-#        polegon_version = POLEGON_VERSION,
-#        seed_offset = lambda w: int(w.rep),
-#    log:
-#        log = os.path.join(TREES_PATH, "{chrom}.{rep}.log"),
-#    script:
-#        "scripts/run_polegon.py"
         
 
 rule tree_statistics:
@@ -347,7 +329,6 @@ rule coalescence_rates:
     """
     input:
         inaccessible = rules.chunk_chromosomes.output.inaccessible,
-        windows = rules.chunk_chromosomes.output.windows,
         trees = rules.merge_chunks.output.trees,
     output:
         coalrate = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.coalrate.p"),
@@ -374,7 +355,6 @@ rule plot_coalescence_rates:
     Plot distributions of pair coalescence times.
     """
     input:
-        windows = rules.chunk_chromosomes.output.windows,
         coalrate = lambda w: plot_coalescence_rates_input(w, "coalrate"),
         crossrate = lambda w: plot_coalescence_rates_input(w, "crossrate"),
     output:

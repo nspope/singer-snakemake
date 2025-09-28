@@ -356,19 +356,23 @@ assert num_retained.sum() == positions.size == np.sum(retain)
 
 
 # calculate windowed stats and get ballpark Ne estimate from global diversity
+num_stats_windows = int(np.floor(bitmask.size / snakemake.params.stats_window_size))
+statistics_windows = np.linspace(0, bitmask.size, num_stats_windows + 1).astype(int)
+statistics_windows_stack = \
+    np.column_stack([statistics_windows[:-1] + 1, statistics_windows[1:]])
 counts = genotypes.count_alleles(max_allele=1)
 assert counts.shape[1] == 2
 diversity, *_ = allel.windowed_diversity(
     positions,
     counts,
-    windows=np.column_stack([windows[:-1] + 1, windows[1:]]),
+    windows=statistics_windows_stack,
     is_accessible=~bitmask,
     fill=0.0,
 )
 tajima_d, *_ = allel.windowed_tajima_d(
     positions,
     counts,
-    windows=np.column_stack([windows[:-1] + 1, windows[1:]]),
+    windows=statistics_windows_stack,
 )
 if snakemake.params.polarised:
     afs = allel.sfs(counts[:, 1], n=2 * samples.size) / np.sum(~bitmask) 
@@ -404,7 +408,7 @@ if snakemake.params.model_masked_sequence:
         f"and setting mutation rate to zero within masked intervals\n"
     )
     # replace `prop_inaccessible` with a per-base binary mask
-    prop_inaccessible, breakpoints = bitmask_to_arrays(bitmask, insert_breakpoints=windows)
+    prop_inaccessible, breakpoints = bitmask_to_arrays(bitmask)
     assert breakpoints[-1] == windows[-1] and breakpoints[0] == windows[0]
     # map `prop_filtered` onto fine-scale intervals (e.g. use average within chunk)
     # FIXME: would it be better to have a fine-scale `prop_filtered`? Would need to smooth. 
@@ -442,15 +446,22 @@ chunks = msprime.RateMap(
     position=np.array(windows), 
     rate=filter_chunks.astype(float),
 )
+filter_windows = np.diff(adjusted_mu.get_cumulative_mass(statistics_windows)) > 0
+stats_windows = msprime.RateMap(
+    position=np.array(statistics_windows),
+    rate=filter_windows.astype(float),
+)
 pickle.dump(hapmap, open(snakemake.output.recomb_rate, "wb"))
 pickle.dump(adjusted_mu, open(snakemake.output.mut_rate, "wb"))
 pickle.dump(inaccessible, open(snakemake.output.inaccessible, "wb"))
 pickle.dump(filtered, open(snakemake.output.filtered, "wb"))
-pickle.dump(chunks, open(snakemake.output.windows, "wb"))
+pickle.dump(chunks, open(snakemake.output.chunks, "wb"))
+pickle.dump(stats_windows, open(snakemake.output.windows, "wb"))
 
+# FIXME: TODO: summary of issues with ratemaps goes here
 
 # dump SINGER parameters for each chunk
-chunks_dir = snakemake.output.chunks
+chunks_dir = snakemake.output.chunks_dir
 os.makedirs(f"{chunks_dir}")
 seeds = rng.integers(0, 2 ** 10, size=(filter_chunks.size, 2))
 vcf_prefix = snakemake.output.vcf.removesuffix(".vcf")
@@ -473,6 +484,7 @@ for i in np.flatnonzero(filter_chunks):
         "mut_map": str(mutation_map_path),
         "recomb_map": str(recombination_map_path),
         # TODO: alternatively, use mean rates?
+        # FIXME: there is a bug in SINGER so that it is using mean rates anyway, might as well make it explicit
         #"m": float(mut.mean_rate),
         #"r": float(rec.mean_rate),
         "input": str(vcf_prefix), 
@@ -548,8 +560,8 @@ pickle.dump(metadata, open(snakemake.output.metadata, "wb"))
 
 
 # dump statistics
-diversity[~filter_chunks] = np.nan
-tajima_d[~filter_chunks] = np.nan
+diversity[~filter_windows] = np.nan
+tajima_d[~filter_windows] = np.nan
 vcf_stats = {
     "diversity": diversity, 
     "tajima_d": tajima_d, 
@@ -576,10 +588,11 @@ if stratify is not None:
                 positions,
                 strata_counts[strata[i]],
                 strata_counts[strata[j]],
-                windows=np.column_stack([windows[:-1] + 1, windows[1:]]),
+                windows=statistics_windows_stack,
                 is_accessible=~bitmask,
                 fill=0.0,
             )
+            divergence[~filter_windows] = np.nan
             strata_divergence.append(divergence)
 
         if snakemake.params.polarised:
