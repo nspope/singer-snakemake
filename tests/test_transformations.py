@@ -3,11 +3,56 @@ Test utilities related to allele polarisation and masking.
 """
 
 import numpy as np
+import tskit
 import msprime
 import pytest
 from workflow.validation.utils import repolarise_tree_sequence
 from workflow.validation.utils import simulate_mispolarisation
 from workflow.scripts.utils import absorb_mutations_above_root
+from workflow.scripts.utils import find_genealogical_gaps 
+
+
+def example_ts():
+    """
+	6┊         ┊         ┊     9   ┊    9    ┊
+	 ┊         ┊         ┊   ┏━┻━┓ ┊  ┏━┻━┓  ┊
+	5┊    8    ┊    8    ┊   8   ┃ ┊  8   ┃  ┊
+	 ┊  ┏━┻━┓  ┊  ┏━┻━┓  ┊  ┏┻━┓ ┃ ┊ ┏┻┓  ┃  ┊
+	4┊  ┃   ┃  ┊  ┃   ┃  ┊  ┃  ┃ ┃ ┊ ┃ ┃  7  ┊
+	 ┊  ┃   ┃  ┊  ┃   ┃  ┊  ┃  ┃ ┃ ┊ ┃ ┃ ┏┻┓ ┊
+	3┊  ┃   ┃  ┊  6   ┃  ┊  6  ┃ ┃ ┊ ┃ ┃ ┃ ┃ ┊
+	 ┊  ┃   ┃  ┊ ┏┻┓  ┃  ┊ ┏┻┓ ┃ ┃ ┊ ┃ ┃ ┃ ┃ ┊
+	2┊  ┃   5  ┊ ┃ ┃  5  ┊ ┃ ┃ ┃ ┃ ┊ ┃ ┃ ┃ ┃ ┊
+	 ┊  ┃  ┏┻┓ ┊ ┃ ┃ ┏┻┓ ┊ ┃ ┃ ┃ ┃ ┊ ┃ ┃ ┃ ┃ ┊
+	1┊  4  ┃ ┃ ┊ ┃ ┃ ┃ ┃ ┊ ┃ ┃ ┃ ┃ ┊ ┃ ┃ ┃ ┃ ┊
+	 ┊ ┏┻┓ ┃ ┃ ┊ ┃ ┃ ┃ ┃ ┊ ┃ ┃ ┃ ┃ ┊ ┃ ┃ ┃ ┃ ┊
+	0┊ 0 1 2 3 ┊ 0 1 2 3 ┊ 0 1 2 3 ┊ 0 2 1 3 ┊
+	 0        10        20        30        40
+
+    The fourth tree does not share edges with the first two trees;
+    the third tree shares edges with the second and fourth trees.
+    """
+    tab = tskit.TableCollection(sequence_length=40)
+    for i in range(4): tab.nodes.add_row(time=0, flags=tskit.NODE_IS_SAMPLE)
+    for i in range(6): tab.nodes.add_row(time=i + 1)
+    tab.edges.add_row(left=0, right=10, child=0, parent=4)
+    tab.edges.add_row(left=0, right=10, child=1, parent=4)
+    tab.edges.add_row(left=0, right=20, child=2, parent=5)
+    tab.edges.add_row(left=0, right=20, child=3, parent=5)
+    tab.edges.add_row(left=0, right=10, child=4, parent=8)
+    tab.edges.add_row(left=0, right=20, child=5, parent=8)
+    tab.edges.add_row(left=10, right=30, child=0, parent=6)
+    tab.edges.add_row(left=10, right=30, child=1, parent=6)
+    tab.edges.add_row(left=10, right=30, child=6, parent=8)
+    tab.edges.add_row(left=20, right=40, child=2, parent=8)
+    tab.edges.add_row(left=20, right=30, child=3, parent=9)
+    tab.edges.add_row(left=20, right=40, child=8, parent=9)
+    tab.edges.add_row(left=30, right=40, child=0, parent=8)
+    tab.edges.add_row(left=30, right=40, child=1, parent=7)
+    tab.edges.add_row(left=30, right=40, child=3, parent=7)
+    tab.edges.add_row(left=30, right=40, child=7, parent=9)
+    tab.sort()
+    return tab.tree_sequence()
 
 
 def test_repolarise_tree_sequence():
@@ -74,76 +119,129 @@ def test_major_allele_repolarisation():
 # (or remove these options as not useful)
 
 
-# --- masking WIP
-
-# algorithm sketch:
-# at each gap start, evaluate if max(edges_right) == gap
-# so, get vector of edges_right length that is gap index.
-# iterate over edges, every time a new edge is added update max(edges_right)
-# if breakpoint corresponds to gap, and max(edges_right) == gap_start,
-# then this is a gap to mask.
-#
-# we have a sequence of edges,
-# |------|----|----|--------|
-# |----|------|-------|-----|
-# |-------------------------|
-#          <-------------> gap
-# --> remapped, will look like
-# |------|-x--|
-# |----|---x--|
-#          <-------------> gap
-
-
-def find_genealogical_gaps(ts, interval_breakpoints, interval_is_gap):
-    """
-    Find intervals in `accessible_ratemap` that have zero rate and across which
-    no edges persist. If this condition is true, then the maximum of
-    `ts.edges_right` for all edges to the left of the start of the gap will
-    fall within the gap.
-    """
-    #interval_breakpoints = accessible_ratemap.position
-    #prop_accessible = accessible_ratemap.rate
-    #interval_is_gap = np.logical_or(prop_accessible == 0.0, np.isnan(prop_accessible))
-    # TODO pass in the above
-    num_intervals = interval_is_gap.size
-    left, right = interval_breakpoints[:-1], interval_breakpoints[1:]
-    sort_order = np.argsort(ts.edges_left)  # TODO: needed?
-    left_index = np.digitize(ts.edges_left[sort_order], interval_breakpoints) - 1
-    right_index = np.digitize(ts.edges_right[sort_order], interval_breakpoints) - 1
-    assert left_index.min() > -1 and left_index.max() < num_intervals
-    assert right_index.min() > -1 and right_index.max() < num_intervals
-    right_index_max = np.maximum.accumulate(right_index)
-    nonoverlapping = np.append(True, left_index[1:] >= right_index_max[:-1])
-    complete_turnover = np.bincount(left_index[nonoverlapping], minlength=num_intervals).astype(bool)
-    genealogical_gaps = np.logical_and(complete_turnover, interval_is_gap)
-    intervals = np.stack([left[genealogical_gaps], right[genealogical_gaps]], axis=-1)
-    return intervals
-
-
-def check_interval_edge_overlap(ts, interval_breakpoints, interval_is_gap):
-    """
-    Find those `intervals` that, when subtracted from an edge,
-    would split that edge in two.
-    """
-    sort_order = np.argsort(ts.edges_left) 
-    left_index = np.digitize(ts.edges_left[sort_order], interval_breakpoints) - 1
-    right_index = np.digitize(ts.edges_right[sort_order], interval_breakpoints, right=True) - 1
-    for i, (a, b) in enumerate(zip(left_index, right_index)):
-        assert a >= 0 and b < interval_is_gap.size
-        assert a <= b
-        print(ts.edges_left[sort_order][i], ts.edges_right[sort_order][i], left_index[i], right_index[i])
-        #if a != b:
-        #    is_gap = interval_is_gap[a:b + 1]
-        #    if np.sum(is_gap[1:] != is_gap[:-1]) < 2:
-        #        return False
-    return True
-
-
-def test_find_genealogical_gaps():
-    ts = msprime.sim_ancestry(10, population_size=1e4, recombination_rate=1e-8, sequence_length=1e5)
-    breaks = np.array([0, 50000, 60000, ts.sequence_length])
+def test_find_genealogical_gaps_by_example():
+    ts = example_ts()
+    # example-specific "yes" intervals
     is_gap = np.array([False, True, False])
-    print(check_interval_edge_overlap(ts, breaks, is_gap))
+    genealogical_gaps = [
+        # tree 4 is independent of 1,2 after deleting tree 3
+        [20, 30],
+        [15, 35],
+        # trees 3,4 are independent of 1 after deleting tree 2
+        [10, 20],
+        [ 5, 25],
+        # tree 4 is independent of 1 after deleting trees 2,3
+        [ 5, 35],
+    ]
+    for gap in genealogical_gaps:
+        breaks = np.array([0] + gap + [ts.sequence_length])
+        np.testing.assert_allclose(find_genealogical_gaps(ts, breaks, is_gap), [gap])
+    # example-specific "no" intervals
+    is_gap = np.array([False, True, False])
+    not_genealogical_gaps = [
+        # deleting only a portion of trees 2,3 will not suffice
+        [15, 25],
+        # deleting only a portion of any tree will not suffice
+        [ 5,  8],
+        [15, 18],
+        [25, 28],
+        [35, 38],
+    ]
+    for gap in not_genealogical_gaps:
+        breaks = np.array([0] + gap + [ts.sequence_length])
+        np.testing.assert_allclose(find_genealogical_gaps(ts, breaks, is_gap), np.empty((0, 2)))
+    # terminal intervals are always genealogical gaps
+    np.testing.assert_allclose(
+        find_genealogical_gaps(ts, np.array([0, 5, 40]), np.array([True, False])), 
+        [[0, 5]],
+    )
+    np.testing.assert_allclose(
+        find_genealogical_gaps(ts, np.array([0, 35, 40]), np.array([False, True])), 
+        [[35, 40]],
+    )
+    # intervals that border terminal gaps are always genealogical gaps
+    ts_gap = ts.delete_intervals([[0, 5], [35, 40]])
+    np.testing.assert_allclose(
+        find_genealogical_gaps(
+            ts_gap, 
+            np.array([0, 5, 8, 32, 35, 40]), 
+            np.array([False, True, False, True, False])
+        ), 
+        [[5, 8], [32, 35]],
+    )
+    np.testing.assert_allclose(
+        find_genealogical_gaps(
+            ts_gap, 
+            np.array([0, 8, 32, 40]), 
+            np.array([True, False, True])
+        ), 
+        [[0, 8], [32, 40]],
+    )
+    # intervals that border internal gaps are always genealogical gaps
+    ts_gap = ts.delete_intervals([[15, 25]])
+    np.testing.assert_allclose(
+        find_genealogical_gaps(
+            ts_gap, 
+            np.array([0, 12, 15, 25, 28, 40]), 
+            np.array([False, True, False, True, False])
+        ), 
+        [[12, 15], [25, 28]],
+    )
+    ts_gap = ts.delete_intervals([[4, 6]])
+    np.testing.assert_allclose(
+        find_genealogical_gaps(
+            ts_gap, 
+            np.array([0, 2, 4, 6, 8, 40]), 
+            np.array([False, True, False, True, False])
+        ), 
+        [[2, 4], [6, 8]],
+    )
+    # intervals that overlap external or internal gaps are always genealogical gaps
+    ts_gap = ts.delete_intervals([[0, 5], [35, 40]])
+    np.testing.assert_allclose(
+        find_genealogical_gaps(
+            ts_gap, 
+            np.array([0, 3, 8, 32, 37, 40]), 
+            np.array([False, True, False, True, False])
+        ), 
+        [[3, 8], [32, 37]],
+    )
+    ts_gap = ts.delete_intervals([[4, 8]])
+    np.testing.assert_allclose(
+        find_genealogical_gaps(
+            ts_gap, 
+            np.array([0, 6, 10, 40]), 
+            np.array([False, True, False])
+        ), 
+        [[6, 10]],
+    )
+
+
+def test_find_genealogical_gaps_by_simulation():
+    ts_gen = msprime.sim_ancestry(
+        samples=10, 
+        sequence_length=1e6, 
+        recombination_rate=1e-8, 
+        population_size=1e4, 
+        num_replicates=100, 
+        random_seed=1,
+    )
+    total_pass = 0
+    total_fail = 0
+    for ts in ts_gen:
+        breaks = np.linspace(0, ts.sequence_length, 10)
+        is_gap = np.array([False, True] *  4 + [False])
+        gaps = find_genealogical_gaps(ts, breaks, is_gap)
+        for i, (l, r) in enumerate(zip(breaks[:-1], breaks[1:])):
+            if is_gap[i]:
+                if [l, r] in gaps:
+                    assert not np.any(np.logical_and(ts.edges_left < l, ts.edges_right > r))
+                    total_pass += 1
+                else:
+                    assert np.any(np.logical_and(ts.edges_left < l, ts.edges_right > r))
+                    total_fail += 1
+    assert total_pass > 0
+    assert total_fail > 0
 
 
 # readme sketch:

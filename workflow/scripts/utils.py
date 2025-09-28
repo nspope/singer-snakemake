@@ -137,10 +137,36 @@ def collapse_masked_intervals(ts: tskit.TreeSequence, accessible: msprime.RateMa
     return tab.tree_sequence()
 
 
-def find_genealogical_gaps(ts: tskit.TreeSequence, accessible: msprime.RateMap) -> np.ndarray:
+def find_genealogical_gaps(
+    ts: tskit.TreeSequence, 
+    interval_breakpoints: np.ndarray, 
+    interval_is_gap: np.ndarray,
+) -> np.ndarray:
     """
-    Find masked intervals (where `accessible.rate == 0.0`) that do not have
-    one or edges extending over. In other words, all edges entering the masked interval
-    must end inside the masked interval.
+    Find intervals between `interval_breakpoints` where `interval_is_gap`, that
+    are not completely contained within any edge.
     """
-    pass
+    assert np.all(np.diff(interval_breakpoints) > 0)
+    assert interval_is_gap.size == interval_breakpoints.size - 1
+    assert interval_breakpoints[0] == 0.0 and interval_breakpoints[-1] == ts.sequence_length
+    assert np.all(np.abs(np.diff(interval_is_gap)) == 1.0)  # no adjacent intervals with same value
+    # TODO: reduce to minimal set of intervals given boolean array
+    interval_left, interval_right = interval_breakpoints[:-1], interval_breakpoints[1:]
+    num_intervals = interval_is_gap.size
+    # sort edges by left endpoint
+    sort_order = np.argsort(ts.edges_left) #ts.edge_insertion_order
+    edges_left = ts.edges_left[sort_order]
+    edges_right = ts.edges_right[sort_order]
+    # find the edges_left immediately before each interval start
+    closest_edge = np.digitize(interval_left, edges_left, right=True) - 1
+    assert np.all(np.logical_or(closest_edge < 0, edges_left[closest_edge] < interval_left))
+    edges_right_max = np.maximum.accumulate(edges_right)
+    no_spanning_edge = np.logical_or(
+        closest_edge < 0,
+        np.logical_and(closest_edge >= 0, edges_right_max[closest_edge] <= interval_right)
+    )
+    genealogical_gaps = np.logical_and(no_spanning_edge, interval_is_gap)
+    intervals = np.stack([interval_left[genealogical_gaps], interval_right[genealogical_gaps]], axis=-1)
+    return intervals
+
+
