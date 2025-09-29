@@ -105,16 +105,20 @@ def mutational_load(ts: tskit.TreeSequence, windows: np.ndarray = None) -> np.nd
     return load.squeeze(0) if windows is None else load
 
 
-def collapse_masked_intervals(ts: tskit.TreeSequence, accessible: msprime.RateMap) -> tskit.TreeSequence:
+def collapse_masked_intervals(
+    ts: tskit.TreeSequence, 
+    accessible: msprime.RateMap,
+) -> tskit.TreeSequence:
     """
     Return a copy of the tree sequence with masked intervals (where `accessible.rate == 0.0`)
     collapsed, so that the coordinate system is in terms of unmasked sequence length.
     Zero length edges are removed, and any nodes that are then disconnected are removed as well.
     All sites and mutations that are within the collapsed intervals are removed.
     """
-    assert np.logical_or(accessible.rate == 0.0, accessible.rate == 1.0)
+    assert np.all(np.logical_or(accessible.rate == 0.0, accessible.rate == 1.0))
     assert accessible.sequence_length == ts.sequence_length
     tab = ts.dump_tables()
+    tab.sequence_length = accessible.get_cumulative_mass(ts.sequence_length)
     # map edges to new coordinate system and remove those with zero length
     tab.edges.left = accessible.get_cumulative_mass(tab.edges.left)
     tab.edges.right = accessible.get_cumulative_mass(tab.edges.right)
@@ -124,13 +128,20 @@ def collapse_masked_intervals(ts: tskit.TreeSequence, accessible: msprime.RateMa
     is_connected[tab.edges.parent] = True
     is_connected[tab.edges.child] = True
     node_map = tab.nodes.keep_rows(is_connected)
+    tab.edges.parent = node_map[tab.edges.parent]
+    tab.edges.child = node_map[tab.edges.child]
     # map sites to new coordinate system and remove those in masked intervals
     site_map = tab.sites.keep_rows(accessible.get_rate(tab.sites.position).astype(bool))
     tab.sites.position = accessible.get_cumulative_mass(tab.sites.position)
     # update mutation pointers and remove those without a node or site
     tab.mutations.node = node_map[tab.mutations.node]
     tab.mutations.site = site_map[tab.mutations.site]
-    tab.mutations.keep_rows(np.logical_and(tab.mutations.site != tskit.NULL, tab.mutations.node != tskit.NULL))
+    tab.mutations.keep_rows(
+        np.logical_and(
+            tab.mutations.site != tskit.NULL, 
+            tab.mutations.node != tskit.NULL,
+        )
+    )
     tab.sort()
     tab.build_index()
     tab.compute_mutation_parents()

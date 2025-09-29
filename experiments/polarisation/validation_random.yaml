@@ -8,7 +8,9 @@ inaccessible-bed: ~  # path to bedfile with masked intervals (will be combined w
 prop-mispolarise: "ref"  # randomly mispolarise this proportion of biallelic variants (or "ref", "maf", "frq")
 time-grid: [1, 6, 60]  # [log10 start, log10 stop, number of intervals] for plots
 project-afs-to: ~  # project AFS to this number of haploids per population for plots
-singer-snakemake-config: "experiments/polarisation/unpolarised_config.yaml"  # path to singer-snakemake config to use (mutation/recombination rates ignored)
+singer-snakemake-config: "config/example_config.yaml"  # path to singer-snakemake config to use (mutation/recombination rates ignored)
+singer-snakemake-config-override:
+    polarised: False
 stdpopsim-config:  # simulation settings
     species: "HomSap"  # stdpopsim species to use
     demographic-model: "Zigzag_1S14"  # name of demographic model

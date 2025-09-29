@@ -10,6 +10,7 @@ from workflow.validation.utils import repolarise_tree_sequence
 from workflow.validation.utils import simulate_mispolarisation
 from workflow.scripts.utils import absorb_mutations_above_root
 from workflow.scripts.utils import find_genealogical_gaps 
+from workflow.scripts.utils import collapse_masked_intervals
 
 
 def example_ts():
@@ -217,6 +218,7 @@ def test_find_genealogical_gaps_by_example():
     )
 
 
+#@pytest.mark.skip
 def test_find_genealogical_gaps_by_simulation():
     ts_gen = msprime.sim_ancestry(
         samples=10, 
@@ -226,8 +228,8 @@ def test_find_genealogical_gaps_by_simulation():
         num_replicates=100, 
         random_seed=1,
     )
-    total_pass = 0
-    total_fail = 0
+    total_drop = 0
+    total_keep = 0
     for ts in ts_gen:
         breaks = np.linspace(0, ts.sequence_length, 10)
         is_gap = np.array([False, True] *  4 + [False])
@@ -236,12 +238,58 @@ def test_find_genealogical_gaps_by_simulation():
             if is_gap[i]:
                 if [l, r] in gaps:
                     assert not np.any(np.logical_and(ts.edges_left < l, ts.edges_right > r))
-                    total_pass += 1
+                    total_drop += 1
                 else:
                     assert np.any(np.logical_and(ts.edges_left < l, ts.edges_right > r))
-                    total_fail += 1
-    assert total_pass > 0
-    assert total_fail > 0
+                    total_keep += 1
+    assert total_drop > 0
+    assert total_keep > 0
+
+
+def test_collapse_masked_intervals_by_example():
+    ts = example_ts()
+    accessible = msprime.RateMap(
+        position=np.array([0., 5., 12., 18., 32., 40.]),
+        rate=np.array([1.0, 0.0, 1.0, 0.0, 1.0]),
+    )
+    ts_collapse = collapse_masked_intervals(ts, accessible)
+    assert ts_collapse.num_trees == 3
+    assert ts_collapse.num_edges == 15
+    assert ts_collapse.num_nodes == ts.num_nodes
+    assert ts_collapse.sequence_length == 19.0
+    tree_spans = np.array([t.span for t in ts_collapse.trees()])
+    tree_spans_ck = np.array([5., 6., 8.])
+    np.testing.assert_allclose(tree_spans, tree_spans_ck)
+
+
+#@pytest.mark.skip
+def test_collapse_masked_intervals_by_simulation():
+    num_intervals = 100
+    rng = np.random.default_rng(1024)
+    ts_gen = msprime.sim_ancestry(
+        samples=10, 
+        sequence_length=1e6, 
+        recombination_rate=1e-8, 
+        population_size=1e4, 
+        num_replicates=100, 
+        random_seed=1,
+    )
+    for ts in ts_gen:
+        accessible = msprime.RateMap(
+            position=np.append(np.append(0, np.sort(rng.uniform(size=num_intervals - 1))), 1) * ts.sequence_length,
+            rate=rng.binomial(1, 0.5, size=num_intervals).astype(float),
+        )
+        intervals = np.stack([
+            accessible.left[accessible.rate==0.0], 
+            accessible.right[accessible.rate==0.0]
+        ], axis=-1)
+        ts_gap = ts.delete_intervals(intervals)
+        ts_collapse = collapse_masked_intervals(ts, accessible)
+        breaks = np.linspace(0, ts.sequence_length, 3)
+        breaks_collapse = accessible.get_cumulative_mass(breaks)
+        counts = ts_collapse.pair_coalescence_counts(windows=breaks_collapse)
+        counts_ck = ts_gap.pair_coalescence_counts(windows=breaks)
+        np.testing.assert_allclose(counts, counts_ck)
 
 
 # readme sketch:
@@ -261,9 +309,5 @@ def test_find_genealogical_gaps_by_simulation():
 # This suggests a diagnostic for detecting polarisation error. In the absence of polarisation error or ascertainment bias, and if the mutational clock is constant, then all samples will have the same mutational load (count of derived mutations) in expectation. This is because the distance from each sample to the root is the same, in every tree. Hence, we can calculate mutational load per sample at each MCMC iteration (using whatever polarisation SINGER has settled on in that MCMC iteration); these should be more or less equal. The figure below shows a traceplot for the "reference genome" scenario described above.
 #
 # In practice, it seems that randomly choosing the ancestral allele for every site works well as a general purpose strategy for initializing the polarisations, so we do this by default if `polarised: False` (but this random initialization can be toggled off by adding XXXX to the config). The figure below shows a mutational load traceplot using the same data as before, but randomly initializing the polarizations.
-
-
-def test_collapse_gaps():
-    pass
     
 
