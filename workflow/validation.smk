@@ -57,7 +57,10 @@ SIMULATION_SEEDS = RNG.integers(2 ** 32 - 1, size=NUM_REPLICATES)
 SINGER_SNAKEMAKE_SEED = RNG.integers(2 ** 32 - 1, size=1).item()
 
 # set singer-snakemake parameters
+SINGER_CONFIG_OVERRIDE = config.get("singer-snakemake-config-override", None)
 SINGER_CONFIG = yaml.safe_load(open(config["singer-snakemake-config"]))
+if SINGER_CONFIG_OVERRIDE is not None: 
+    SINGER_CONFIG.update(SINGER_CONFIG_OVERRIDE)
 SINGER_CONFIG["input-dir"] = INPUT_DIR
 SINGER_CONFIG["output-dir"] = OUTPUT_DIR
 SINGER_CONFIG["mutation-rate"] = MUTATION_RATE

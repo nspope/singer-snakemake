@@ -1,5 +1,3 @@
-# TODO: this is not yet tested
-
 """
 Simulate an ARG with demographic model, interval mask, and recombination rate
 taken from custom input files. Note that the VCF/inferred ARG coordinate system
@@ -7,6 +5,7 @@ is one-based, but the true ARG coordinate system is zero-based.
 """
 
 import stdpopsim
+import msprime
 import tszip
 import demes
 import gzip
@@ -15,12 +14,14 @@ import warnings
 
 from utils import simulate_sequence_mask
 from utils import simulate_variant_mask
+from utils import simulate_mispolarisation
 from utils import ratemap_to_hapmap
 from utils import population_metadata_csv
 from utils import bitmask_to_bed
 from utils import bed_to_bitmask
 from utils import assert_valid_bedmask
 from utils import assert_valid_hapmap
+from utils import repolarise_tree_sequence
 
 warnings.filterwarnings("ignore")
 
@@ -30,17 +31,24 @@ recombination_map = msprime.RateMap.read_hapmap(config["recombination-map"])
 
 interval_mask_density, interval_mask_length = snakemake.params.mask_sequence
 variant_mask_prop = snakemake.params.mask_variants
+mispolarised_prop = snakemake.params.prop_mispolar
 inaccessible_bed = snakemake.params.inaccessible_bed
 seed = int(snakemake.wildcards.chrom)
+contig_name = snakemake.wildcards.chrom
 
 # simulate data
-subseed = np.random.default_rng(seed).integers(2 ** 32 - 1, size=4)
+subseed = np.random.default_rng(seed).integers(2 ** 32 - 1, size=5)
 prefix = snakemake.output.trees.removesuffix(".tsz")
 ts = msprime.sim_ancestry(
-    demographic_model=demography, 
-    contig=contig, 
     samples=config["samples"],
-    seed=subseed[0],
+    demography=model, 
+    recombination_rate=recombination_map,
+    random_seed=subseed[0],
+)
+ts = msprime.sim_mutations(
+    ts,
+    rate=config["mutation-rate"],
+    random_seed=subseed[4],
 )
 
 sequence_mask = simulate_sequence_mask(ts, interval_mask_density, interval_mask_length, subseed[1])
@@ -65,9 +73,9 @@ sitemask.close()
 
 # write out hapmap
 hapmap = open(f"{prefix}.hapmap", "w")
-hapmap.write(ratemap_to_hapmap(contig.recombination_map, contig_name, missing_as_zero=True))
+hapmap.write(ratemap_to_hapmap(recombination_map, contig_name, missing_as_zero=True))
 hapmap.close()
-assert_valid_hapmap(contig.recombination_map, f"{prefix}.hapmap", ignore_missing=True)
+assert_valid_hapmap(recombination_map, f"{prefix}.hapmap", ignore_missing=True)
 
 # write out metadata as csv
 metadata_csv, individual_names = population_metadata_csv(ts)
