@@ -6,7 +6,7 @@ mask-sequence: [0.0, 0]  # randomly mask intervals with this [density, mean leng
 mask-variants: 0.2  # randomly mask this proportion of variants
 inaccessible-bed: "example/example.mask.bed"  # path to bedfile with masked intervals (will be combined with simulated intervals, can be omitted)
 prop-mispolarise: 0.0  # randomly mispolarise this proportion of biallelic variants (or "maf" for major-allele polarisation)
-time-grid: [2, 5, 50]  # [log10 start, log10 stop, number of intervals] for mutation age plot
+time-grid: [1, 7, 50]  # [log10 start, log10 stop, number of intervals] for mutation age plot
 project-afs-to: 2  # project AFS to this number of haploids per population for mutation age plot
 singer-snakemake-config: "config/example_config.yaml"  # path to singer-snakemake config to use (mutation/recombination rates ignored)
 singer-snakemake-config-override:  # key-values to override in config file

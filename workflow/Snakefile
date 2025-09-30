@@ -368,5 +368,7 @@ rule plot_coalescence_rates:
         stratify = STRATIFY_BY,
         mcmc_samples = SINGER_MCMC_SAMPLES,
         mcmc_burnin = SINGER_MCMC_BURNIN,
+        # for debugging:
+        tail_cutoff = config.get("coalrate-tail-cutoff", 0.05),
     script:
         "scripts/plot_coalescence_rates.py"

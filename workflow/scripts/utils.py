@@ -87,7 +87,7 @@ def absorb_mutations_above_root(ts: tskit.TreeSequence) -> tskit.TreeSequence:
 
 def mutational_load(ts: tskit.TreeSequence, windows: np.ndarray = None) -> np.ndarray:
     """
-    TODO
+    Calculate the number of derived mutations per sample.
     """
     genome_windows = np.array([0, ts.sequence_length]) if windows is None else windows
     assert genome_windows[0] == 0 and genome_windows[-1] == ts.sequence_length
@@ -105,47 +105,20 @@ def mutational_load(ts: tskit.TreeSequence, windows: np.ndarray = None) -> np.nd
     return load.squeeze(0) if windows is None else load
 
 
-def collapse_masked_intervals(
-    ts: tskit.TreeSequence, 
-    accessible: msprime.RateMap,
-) -> tskit.TreeSequence:
+def compactify_run_length_encoding(breaks: np.ndarray, values: np.ndarray) -> (np.ndarray, np.ndarray):
     """
-    Return a copy of the tree sequence with masked intervals (where `accessible.rate == 0.0`)
-    collapsed, so that the coordinate system is in terms of unmasked sequence length.
-    Zero length edges are removed, and any nodes that are then disconnected are removed as well.
-    All sites and mutations that are within the collapsed intervals are removed.
+    Combine adjacent runs in a run length encoding if they have the same value
     """
-    assert np.all(np.logical_or(accessible.rate == 0.0, accessible.rate == 1.0))
-    assert accessible.sequence_length == ts.sequence_length
-    tab = ts.dump_tables()
-    tab.sequence_length = accessible.get_cumulative_mass(ts.sequence_length)
-    # map edges to new coordinate system and remove those with zero length
-    tab.edges.left = accessible.get_cumulative_mass(tab.edges.left)
-    tab.edges.right = accessible.get_cumulative_mass(tab.edges.right)
-    tab.edges.keep_rows(tab.edges.right > tab.edges.left)
-    # remove disconnected nodes
-    is_connected = np.full(tab.nodes.num_rows, False)
-    is_connected[tab.edges.parent] = True
-    is_connected[tab.edges.child] = True
-    node_map = tab.nodes.keep_rows(is_connected)
-    tab.edges.parent = node_map[tab.edges.parent]
-    tab.edges.child = node_map[tab.edges.child]
-    # map sites to new coordinate system and remove those in masked intervals
-    site_map = tab.sites.keep_rows(accessible.get_rate(tab.sites.position).astype(bool))
-    tab.sites.position = accessible.get_cumulative_mass(tab.sites.position)
-    # update mutation pointers and remove those without a node or site
-    tab.mutations.node = node_map[tab.mutations.node]
-    tab.mutations.site = site_map[tab.mutations.site]
-    tab.mutations.keep_rows(
-        np.logical_and(
-            tab.mutations.site != tskit.NULL, 
-            tab.mutations.node != tskit.NULL,
-        )
-    )
-    tab.sort()
-    tab.build_index()
-    tab.compute_mutation_parents()
-    return tab.tree_sequence()
+    # TODO: vectorise this
+    assert breaks.size == values.size + 1
+    new_breaks = [breaks[0]]
+    new_values = [values[0]]
+    for brk, val in zip(breaks[1:-1], values[1:]):
+        if val != new_values[-1]:
+            new_breaks.append(brk)
+            new_values.append(val)
+    new_breaks.append(breaks[-1])
+    return np.array(new_breaks), np.array(new_values)
 
 
 def find_genealogical_gaps(
@@ -160,8 +133,11 @@ def find_genealogical_gaps(
     assert np.all(np.diff(interval_breakpoints) > 0)
     assert interval_is_gap.size == interval_breakpoints.size - 1
     assert interval_breakpoints[0] == 0.0 and interval_breakpoints[-1] == ts.sequence_length
+    # reduce to minimal set of intervals given boolean array
+    interval_breakpoints, interval_is_gap = \
+        compactify_run_length_encoding(interval_breakpoints, interval_is_gap)
+    # TODO: ^^^ move to outside function?
     assert np.all(np.abs(np.diff(interval_is_gap)) == 1.0)  # no adjacent intervals with same value
-    # TODO: reduce to minimal set of intervals given boolean array
     interval_left, interval_right = interval_breakpoints[:-1], interval_breakpoints[1:]
     num_intervals = interval_is_gap.size
     # sort edges by left endpoint

@@ -408,7 +408,7 @@ if snakemake.params.model_masked_sequence:
         f"and setting mutation rate to zero within masked intervals\n"
     )
     # replace `prop_inaccessible` with a per-base binary mask
-    prop_inaccessible, breakpoints = bitmask_to_arrays(bitmask)
+    prop_inaccessible, breakpoints = bitmask_to_arrays(bitmask, insert_breakpoints=windows)
     assert breakpoints[-1] == windows[-1] and breakpoints[0] == windows[0]
     # map `prop_filtered` onto fine-scale intervals (e.g. use average within chunk)
     # FIXME: would it be better to have a fine-scale `prop_filtered`? Would need to smooth. 

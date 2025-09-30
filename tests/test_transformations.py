@@ -6,11 +6,12 @@ import numpy as np
 import tskit
 import msprime
 import pytest
-from workflow.validation.utils import repolarise_tree_sequence
-from workflow.validation.utils import simulate_mispolarisation
+from workflow.scripts.validation.utils import repolarise_tree_sequence
+from workflow.scripts.validation.utils import simulate_mispolarisation
+from workflow.scripts.validation.utils import collapse_masked_intervals
 from workflow.scripts.utils import absorb_mutations_above_root
 from workflow.scripts.utils import find_genealogical_gaps 
-from workflow.scripts.utils import collapse_masked_intervals
+from workflow.scripts.utils import compactify_run_length_encoding
 
 
 def example_ts():
@@ -231,9 +232,10 @@ def test_find_genealogical_gaps_by_simulation():
     total_drop = 0
     total_keep = 0
     for ts in ts_gen:
-        breaks = np.linspace(0, ts.sequence_length, 10)
-        is_gap = np.array([False, True] *  4 + [False])
+        breaks = np.linspace(0, ts.sequence_length, 11)
+        is_gap = np.array([False, True, False, False, True, True, False, True, True, False])
         gaps = find_genealogical_gaps(ts, breaks, is_gap)
+        breaks, is_gap = compactify_run_length_encoding(breaks, is_gap)
         for i, (l, r) in enumerate(zip(breaks[:-1], breaks[1:])):
             if is_gap[i]:
                 if [l, r] in gaps:

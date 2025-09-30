@@ -4,7 +4,6 @@ Plot pair coalescence rates and time distributions from an ARG.
 Part of https://github.com/nspope/singer-snakemake.
 """
 
-import sys
 import pickle
 import msprime
 import numpy as np
@@ -77,7 +76,7 @@ if snakemake.params.stratify is not None:
             fig.supylabel("Pair coalescence rate")
             plt.savefig(os.path.join(out_dir, "cross-coalescence-rates.png"))
         elif what == "pdf":
-            fig.supylabel("Proportion coalescencing pairs")
+            fig.supylabel("Proportion coalescing pairs")
             plt.savefig(os.path.join(out_dir, "cross-coalescence-pdf.png"))
         plt.clf()
 

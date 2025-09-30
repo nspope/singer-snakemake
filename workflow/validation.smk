@@ -6,6 +6,8 @@ repolarised ancestral states across frequencies.
 Mutations frequencies are down-projected via hypergeometric sampling
 to smooth the mutation age distributions.
 
+Pair coalescence time distributions are also compared.
+
 Part of https://github.com/nspope/singer-snakemake.
 """
 
@@ -41,13 +43,13 @@ if "stdpopsim-config" in config:
     REF_CONTIG = REF_SPECIES.get_contig(**SIMULATION_CONFIG["contig"])
     MUTATION_RATE = REF_CONTIG.mutation_rate
     RECOMBINATION_RATE = REF_CONTIG.recombination_map.mean_rate
-    SIMULATION_SCRIPT = "validation/simulate_stdpopsim.py"
+    SIMULATION_SCRIPT = "scripts/validation/simulate_stdpopsim.py"
 elif "msprime-config" in config:
     SIMULATION_CONFIG = config["msprime-config"]
     MUTATION_RATE = SIMULATION_CONFIG["mutation-rate"]
     RECOMBINATION_MAP = SIMULATION_CONFIG["recombination-map"]
     RECOMBINATION_RATE = RateMap.read_hapmap(RECOMBINATION_MAP).mean_rate
-    SIMULATION_SCRIPT = "validation/simulate_msprime.py"
+    SIMULATION_SCRIPT = "scripts/validation/simulate_msprime.py"
 else:
     raise ValueError("No simulation config provided")
 
@@ -74,12 +76,17 @@ MCMC_SAMPLES = np.arange(SINGER_CONFIG["singer-mcmc-samples"])[BURN_IN:]
 VCF_PATH = f"{INPUT_DIR}/{{chrom}}.vcf.gz"
 TRUE_TREES_PATH = f"{INPUT_DIR}/{{chrom}}.tsz"
 INFR_TREES_PATH = f"{OUTPUT_DIR}/{{chrom}}/trees/{{chrom}}.{{rep}}.tsz"
+INACCESSIBLE_PATH = f"{OUTPUT_DIR}/{{chrom}}/{{chrom}}.inaccessible.p"
 VCF_ALLELES_PATH = f"{OUTPUT_DIR}/{{chrom}}/{{chrom}}.alleles.p"
 DIAGNOSTICS_PATH = f"{OUTPUT_DIR}/{{chrom}}/plots/repolarised-trace.png"
 INFR_SITE_AFS_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.infr_site_afs.npy"
 TRUE_SITE_AFS_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.true_site_afs.npy"
 INFR_SITE_REL_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.infr_site_rel.npy"
 TRUE_SITE_REL_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.true_site_rel.npy"
+INFR_PAIR_DEN_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.infr_pair_den.npy"
+TRUE_PAIR_DEN_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.true_pair_den.npy"
+INFR_PAIR_RAT_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.infr_pair_rat.npy"
+TRUE_PAIR_RAT_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.true_pair_rat.npy"
 MISPOLARISED_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.mispolarised.npy"
 PLOT_PATH = f"{OUTPUT_DIR}/plots"
 
@@ -90,12 +97,15 @@ rule all:
     input:
         vcf = expand(VCF_PATH, chrom=SIMULATION_SEEDS),
         trees = ancient(expand(INFR_TREES_PATH, chrom=SIMULATION_SEEDS, rep=MCMC_SAMPLES)),
+        inaccessible = ancient(expand(INACCESSIBLE_PATH, chrom=SIMULATION_SEEDS)),
         diagnostics = ancient(expand(DIAGNOSTICS_PATH, chrom=SIMULATION_SEEDS)),
         alleles = ancient(expand(VCF_ALLELES_PATH, chrom=SIMULATION_SEEDS)),
         pdf_plot = os.path.join(PLOT_PATH, "mutation-age-pdf.png"),
         exp_plot = os.path.join(PLOT_PATH, "mutation-age-expectation.png"),
         rel_plot = os.path.join(PLOT_PATH, "relatedness-over-time.png"),
         pol_plot = os.path.join(PLOT_PATH, "proportion-mispolarised.png"),
+        pair_den_plot = os.path.join(PLOT_PATH, "proportion-coalescing-pairs.png"),
+        pair_rat_plot = os.path.join(PLOT_PATH, "pair-coalescence-rates.png"),
 
 
 rule simulate_arg:
@@ -139,7 +149,7 @@ rule calculate_inferred_afs:
         time_grid = TIME_GRID,
         unknown_mutation_age = True,
     script:
-        "validation/calculate_afs.py"
+        "scripts/validation/calculate_afs.py"
 
 
 rule calculate_reference_afs:
@@ -156,7 +166,7 @@ rule calculate_reference_afs:
         time_grid = TIME_GRID,
         unknown_mutation_age = False,
     script:
-        "validation/calculate_afs.py"
+        "scripts/validation/calculate_afs.py"
 
 
 rule compare_mutation_ages:
@@ -172,7 +182,7 @@ rule compare_mutation_ages:
     params:
         time_grid = TIME_GRID,
     script:
-        "validation/compare_mutation_ages.py"
+        "scripts/validation/compare_mutation_ages.py"
 
 
 rule calculate_inferred_relatedness:
@@ -188,12 +198,12 @@ rule calculate_inferred_relatedness:
         unknown_mutation_age = True,
         for_individuals = True,
     script:
-        "validation/calculate_relatedness.py"
+        "scripts/validation/calculate_relatedness.py"
 
 
 rule calculate_reference_relatedness:
     """
-    Average time-windowed observed relatedness across MCMC samples per simulation.
+    Calculate time-windowed observed relatedness for true ARGs.
     """
     input:
         trees = [TRUE_TREES_PATH],
@@ -204,7 +214,7 @@ rule calculate_reference_relatedness:
         unknown_mutation_age = True,
         for_individuals = True,
     script:
-        "validation/calculate_relatedness.py"
+        "scripts/validation/calculate_relatedness.py"
 
 
 rule compare_relatedness:
@@ -221,7 +231,7 @@ rule compare_relatedness:
         log_relatedness = False,
         max_individuals = 6,
     script:
-        "validation/compare_relatedness.py"
+        "scripts/validation/compare_relatedness.py"
 
 
 rule calculate_mispolarised:
@@ -239,7 +249,7 @@ rule calculate_mispolarised:
         project_to = PROJECT_TO,
         position_adjust = 1,  # position offset applied to true trees
     script:
-        "validation/calculate_mispolarised.py"
+        "scripts/validation/calculate_mispolarised.py"
 
 
 rule compare_mispolarised:
@@ -251,4 +261,55 @@ rule compare_mispolarised:
     output:
         pol_plot = rules.all.input.pol_plot,
     script:
-        "validation/compare_mispolarised.py"
+        "scripts/validation/compare_mispolarised.py"
+
+
+rule calculate_inferred_pair_coalescence:
+    """
+    Average pair coalescence time distribution across MCMC replicates.
+    """
+    input:
+        trees = expand(INFR_TREES_PATH, rep=MCMC_SAMPLES, allow_missing=True),
+        inaccessible = INACCESSIBLE_PATH,
+    output:
+        pair_density = INFR_PAIR_DEN_PATH,
+        pair_rates = INFR_PAIR_RAT_PATH,
+    params:
+        time_grid = TIME_GRID,
+    script:
+        "scripts/validation/calculate_pair_coalescence.py"
+
+
+rule calculate_reference_pair_coalescence:
+    """
+    Calculate pair coalescence time distribution for true ARG.
+    """
+    input:
+        trees = [TRUE_TREES_PATH],
+        inaccessible = INACCESSIBLE_PATH,
+    output:
+        pair_density = TRUE_PAIR_DEN_PATH,
+        pair_rates = TRUE_PAIR_RAT_PATH,
+    params:
+        time_grid = TIME_GRID,
+    script:
+        "scripts/validation/calculate_pair_coalescence.py"
+
+
+rule compare_pair_coalescence:
+    """
+    Plot true and inferred coalescence time distributions.
+    """
+    input:
+        infr_pair_density = expand(INFR_PAIR_DEN_PATH, chrom=SIMULATION_SEEDS),
+        true_pair_density = expand(TRUE_PAIR_DEN_PATH, chrom=SIMULATION_SEEDS),
+        infr_pair_rates = expand(INFR_PAIR_RAT_PATH, chrom=SIMULATION_SEEDS),
+        true_pair_rates = expand(TRUE_PAIR_RAT_PATH, chrom=SIMULATION_SEEDS),
+    output:
+        pair_den_plot = rules.all.input.pair_den_plot,
+        pair_rat_plot = rules.all.input.pair_rat_plot,
+    params:
+        time_grid = TIME_GRID,
+        log_coalescence_rates = True,
+    script:
+        "scripts/validation/compare_pair_coalescence.py"

@@ -1,11 +1,11 @@
 # --- example_config.yaml ---
 input-dir: "example" # directory with input files per chromosome, see README
 output-dir: "results" # directory where to place output
-chromosomes: ~ # a list of chromosomes to use (e.g. "chr1"), if None (~) use all `vcf.gz` in `input-dir`
+chromosomes: null # a list of chromosomes to use (e.g. "chr1"), if `null` use all `vcf.gz` in `input-dir`
 mutation-rate: 1.0e-8 # per base per generation mutation rate
 recombination-rate: 1.0e-8 # per base per generation recombination rate, ignored if hapmap is present
 polarised: True # are variants polarised so that the reference state is ancestral
-stratify-by: "population" # column in metadata to use for population table in tree sequence
+stratify-by: "population" # column in metadata to use for population table in tree sequence (or `null`)
 random-seed: 1 # random seed
 # --- discretization options ---
 max-chunk-size: 1.0e6 # target size in base pairs for each chunk run through SINGER
