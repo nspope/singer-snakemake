@@ -1,6 +1,14 @@
+"""
+Plot pair coalescence time distribution and pair coalescence rates between
+true and inferred ARGs
+"""
+
 import numpy as np
+import matplotlib
 import itertools
 import matplotlib.pyplot as plt
+
+matplotlib.rcParams["figure.dpi"] = 300
 
 time_grid = snakemake.params.time_grid
 reference_density = np.load(next(iter(snakemake.input.infr_pair_density)))
@@ -37,7 +45,7 @@ for file in snakemake.input.true_pair_rates:
 rows, cols = reference_density.shape[:2]
 fig, axs = plt.subplots(
     rows, cols, 
-    figsize=(2.25 * cols, 2 * rows) if cols > 1 else (3.5, 3), 
+    figsize=(2.25 * cols, 2 * rows) if cols > 1 else (4, 3.25), 
     sharex=True, sharey=True, squeeze=False,
 )
 population_pairs = itertools.product(range(rows), range(cols))
@@ -72,7 +80,7 @@ plt.clf()
 rows, cols = reference_density.shape[:2]
 fig, axs = plt.subplots(
     rows, cols, 
-    figsize=(2.25 * cols, 2 * rows) if cols > 1 else (3.5, 3), 
+    figsize=(2.25 * cols, 2 * rows) if cols > 1 else (4, 3.25), 
     sharex=True, sharey=True, squeeze=False,
 )
 population_pairs = itertools.product(range(rows), range(cols))
