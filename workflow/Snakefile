@@ -55,7 +55,7 @@ POLEGON_MAX_STEP = float(config["polegon-max-step"])
 assert POLEGON_MCMC_SAMPLES > 0, "Number of POLEGON MCMC samples must be nonzero"
 assert POLEGON_MCMC_BURNIN < POLEGON_MCMC_SAMPLES, "Burn-in exceeds number of POLEGON MCMC samples"
 
-COALRATE_EPOCHS = int(config["coalrate-epochs"])
+STATS_TIME_GRID = config["stats-time-grid"]
 STATS_WINDOW_SIZE = float(config["stats-window-size"])
 
 SINGER_BINARY = os.path.join(
@@ -337,7 +337,7 @@ rule coalescence_rates:
         coalrate = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.coalrate.p"),
         crossrate = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.crossrate.p"),
     params:
-        coalrate_epochs = COALRATE_EPOCHS,
+        time_grid = STATS_TIME_GRID,
         stratify = STRATIFY_BY,
     script:
         "scripts/coalescence_rates.py"
@@ -364,7 +364,7 @@ rule plot_coalescence_rates:
         pair_coalescence_pdf = os.path.join(PLOTS_PATH, "pair-coalescence-pdf.png"),
         pair_coalescence_rates = os.path.join(PLOTS_PATH, "pair-coalescence-rates.png"),
     params:
-        coalrate_epochs = COALRATE_EPOCHS,
+        time_grid = STATS_TIME_GRID,
         stratify = STRATIFY_BY,
         mcmc_samples = SINGER_MCMC_SAMPLES,
         mcmc_burnin = SINGER_MCMC_BURNIN,

@@ -27,16 +27,23 @@ def tag():
 
 # --- implm --- #
 
-num_intervals = snakemake.params.coalrate_epochs
+num_intervals = snakemake.params.time_grid[2]  # TODO clean this up
 num_mcmc = snakemake.params.mcmc_samples
 num_burnin = snakemake.params.mcmc_burnin
 
+reps_kwargs = {"color": "gray", "alpha": 0.1}
+mean_kwargs = {"color": "black", "linewidth": 1.5}
 
 # cross coalescence between strata
 if snakemake.params.stratify is not None:
     for what in ('rates', 'pdf'):
         inp = pickle.load(open(snakemake.input.crossrate[0], "rb"))
         names, breaks = inp['names'], inp['breaks']
+        vals = np.stack([
+            pickle.load(open(f, "rb"))[what] for f 
+            in snakemake.input.crossrate[num_burnin:]
+        ])
+        mean = vals.mean(axis=0)
         ncol = names.size
         nrow = names.size
         fig, axs = plt.subplots(
@@ -44,34 +51,15 @@ if snakemake.params.stratify is not None:
             sharex=True, sharey=True, squeeze=False,
             constrained_layout=True,
         )
-        reps = 0
-        mean = np.zeros_like(breaks)
-        for i, f in enumerate(snakemake.input.crossrate[1:]):
-            if i >= num_burnin:
-                inp = pickle.load(open(f, "rb"))
-                val = inp[what]
-                mean += val
-                reps += 1
-                for j, p in enumerate(names):
-                    for k, q in enumerate(names):
-                        if j <= k:
-                            axs[j, k].step(
-                                breaks[j, k], 
-                                val[j, k], 
-                                color="gray",
-                                alpha=0.1,
-                            )
-        mean /= reps
+        for val in vals:
+            for j, p in enumerate(names):
+                for k, q in enumerate(names):
+                    if j <= k:
+                        axs[j, k].step(breaks[j, k], val[j, k], **reps_kwargs)
         for j, p in enumerate(names):
             for k, q in enumerate(names):
                 if j <= k:
-                    axs[j, k].step(
-                        breaks[j, k], 
-                        mean[j, k], 
-                        color="black",
-                        label=q, 
-                        linewidth=1.5,
-                    )
+                    axs[j, k].step(breaks[j, k], mean[j, k], **mean_kwargs)
                     axs[j, k].set_xscale("log")
                     if what == "rates": axs[j, k].set_yscale("log")
                     if j == 0:
@@ -96,18 +84,15 @@ if snakemake.params.stratify is not None:
 
 # pair coalescence rates with all samples
 for what in ("pdf", "rates"):
+    breaks = pickle.load(open(snakemake.input.coalrate[0], "rb"))["breaks"]
+    vals = np.stack([
+        pickle.load(open(f, "rb"))[what] for f 
+        in snakemake.input.coalrate[num_burnin:]
+    ])
+    mean = vals.mean(axis=0)
     fig, axs = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    reps = 0
-    mean = np.zeros(num_intervals)
-    for i, f in enumerate(snakemake.input.coalrate):
-        inp = pickle.load(open(f, "rb"))
-        val, breaks = np.squeeze(inp[what]), np.squeeze(inp["breaks"])
-        if i >= num_burnin:
-            mean += val
-            reps += 1
-            axs.step(breaks, val, color="gray", alpha=0.1)
-    mean /= reps
-    axs.step(breaks, mean, color="black", linewidth=1.5)
+    for val in vals: axs.step(breaks, val, **reps_kwargs)
+    axs.step(breaks, mean, **mean_kwargs)
     axs.set_xlabel("Generations in past")
     axs.set_xscale("log")
     if what == "rates": 

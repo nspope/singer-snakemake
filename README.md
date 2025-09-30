@@ -71,8 +71,9 @@ polegon-mcmc-thin: 10 # thinning interval between MCMC samples for POLEGON datin
 polegon-mcmc-burnin: 0.5 # proportion of initial samples trimmed from posterior mean for POLEGON dating
 polegon-scaling-reps: 5 # number of timescale rescaling reps after MCMC sampling for POLEGON dating
 polegon-max-step: 10.0 # step size used in proposal for POLEGON dating
-# --- pair coalescence rates ---
-coalrate-epochs: 25 # number of time intervals within which to calculate statistics
+# --- summary statistics ---
+stats-time-grid: [1, 7, 25]  # [log10 start, log10 stop, number of intervals] for coalescence rates, etc
+stats-window-size: 5.0e4 # size of genomic windows in base pairs for comparing expected vs observed
 ```
 
 ### Missing data, mutation rate, and dating ancestors
