@@ -1,22 +1,23 @@
 # --- settings for validation workflow using a stdpopsim species and model --- #
-output-dir: "validation-polarised"  # where to place validation results and simulations
+output-dir: "ablation-no-polegon"  # where to place validation results and simulations
 random-seed: 1024  # global random seed
 num-replicates: 5  # number of replicate ARGs to simulate
-mask-sequence: [0.0001, 800]  # randomly mask intervals with this [density, mean length]
-mask-variants: 0.2  # randomly mask this proportion of variants
-inaccessible-bed: ~  # path to bedfile with masked intervals (will be combined with simulated intervals, can be omitted)
+mask-sequence: [0.0, 0]  # randomly mask intervals with this [density, mean length]
+mask-variants: 0.0  # randomly mask this proportion of variants
+inaccessible-bed: null  # path to bedfile with masked intervals (will be combined with simulated intervals, can be omitted)
 prop-mispolarise: 0.0  # randomly mispolarise this proportion of biallelic variants (or "ref", "maf", "frq")
 time-grid: [1, 6, 60]  # [log10 start, log10 stop, number of intervals] for plots
-project-afs-to: ~  # project AFS to this number of haploids per population for plots
+project-afs-to: null  # project AFS to this number of haploids per population for plots
 singer-snakemake-config: "config/example_config.yaml"  # path to singer-snakemake config to use (mutation/recombination rates ignored)
 singer-snakemake-config-override:  # override these key-values from `singer-snakemake-config`
     polarised: True
+    use-polegon: False
 stdpopsim-config:  # simulation settings
     species: "HomSap"  # stdpopsim species to use
     demographic-model: "Zigzag_1S14"  # name of demographic model
     samples: {"generic": 30}  # sampled individuals per population
     contig:  # kwargs to Species.get_contig
         chromosome: "chr1"
-        left: 200.0e+6
-        right: 210.0e+6
+        left: 180.0e+6
+        right: 230.0e+6
         genetic_map: "HapMapII_GRCh38"
