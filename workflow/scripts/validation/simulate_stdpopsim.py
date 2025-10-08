@@ -5,8 +5,10 @@ system is zero-based.
 """
 
 import stdpopsim
+import msprime
 import tszip
 import gzip
+import textwrap
 import numpy as np
 import warnings
 
@@ -20,6 +22,7 @@ from utils import bed_to_bitmask
 from utils import assert_valid_bedmask
 from utils import assert_valid_hapmap
 from utils import repolarise_tree_sequence
+from utils import extract_ancestral_sequence
 
 warnings.filterwarnings("ignore")
 
@@ -30,21 +33,28 @@ demography = species.get_demographic_model(config["demographic-model"])
 contig = species.get_contig(**config["contig"])
 engine = stdpopsim.get_engine("msprime")  #FIXME: use SLiM if DFE
 contig_name, *_ = contig.coordinates
+ploidy = config.get("ploidy", 2)
 
 interval_mask_rate, interval_mask_length = snakemake.params.mask_sequence
 record_structural_variants = snakemake.params.record_structural_variants
+ancestral_mask_rate, ancestral_mask_length = snakemake.params.mask_ancestral
 variant_mask_prop = snakemake.params.mask_variants
 mispolarised_prop = snakemake.params.prop_mispolar
 inaccessible_bed = snakemake.params.inaccessible_bed
+unpolarised_bed = snakemake.params.unpolarised_bed
 seed = int(snakemake.wildcards.chrom)
 
 # simulate data
-subseed = np.random.default_rng(seed).integers(2 ** 32 - 1, size=4)
+samples = [
+    msprime.SampleSet(n, population=p, ploidy=ploidy) 
+    for p, n in config["samples"].items()
+]
+subseed = np.random.default_rng(seed).integers(2 ** 32 - 1, size=6)
 prefix = snakemake.output.trees.removesuffix(".tsz")
 ts = engine.simulate(
     demographic_model=demography, 
     contig=contig, 
-    samples=config["samples"],
+    samples=samples,
     seed=subseed[0],
 )
 
@@ -71,6 +81,20 @@ variant_mask[sv_mask] = False
 # filter out masked sites from true trees, for the sake of downstream comparison
 site_masked = np.logical_or(sequence_mask[site_position], variant_mask)
 ts = ts.delete_sites(np.flatnonzero(site_masked))
+
+# simulate ancestral sequence
+ancestral_sequence = extract_ancestral_sequence(ts)
+_, _, ancestral_mask = simulate_sequence_mask(
+    ts,
+    rate=ancestral_mask_rate,
+    length=ancestral_mask_length,
+    seed=subseed[4],
+)
+bed_to_bitmask(unpolarised_bed, ancestral_mask) # applied on top of simulated mask
+ancestral_sequence[ancestral_mask] = "N"
+
+# simulate sites to repolarise
+repolarise = simulate_mispolarisation(ts, mispolarised_prop, subseed[5])
 
 # write out sequence mask as bed
 bedmask = open(f"{prefix}.mask.bed", "w")
@@ -100,11 +124,15 @@ metadata = open(f"{prefix}.meta.csv", "w")
 metadata.write(metadata_csv)
 metadata.close()
 
+# write out ancestral sequence
+ancestral = gzip.open(f"{prefix}.ancestral.fa.gz", "wt")
+ancestral.write(f">{contig_name}\n" + "".join(ancestral_sequence))
+ancestral.close()
+
 # write out trees
 tszip.compress(ts, snakemake.output.trees)
 
 # mispolarise and write out VCF
-repolarise = simulate_mispolarisation(ts, mispolarised_prop, subseed[3])
 repolarise_tree_sequence(ts, repolarise).write_vcf(
     gzip.open(f"{prefix}.vcf.gz", "wt"), 
     contig_id=contig_name,

@@ -1,3 +1,8 @@
+# [0.1.2]
+
+- Use ancestral states if provided as fasta; ambiguous ancestral states are treated as unpolarised
+- Include a custom version of SINGER binary that allows per-site polarisation
+
 # 3-Mar-26 [0.1.1]
 
 - Use discretization scheme that delineates chunks between large "gaps" of masked sequence
