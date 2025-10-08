@@ -4,6 +4,7 @@ random-seed: 1024  # global random seed
 num-replicates: 5  # number of replicate ARGs to simulate
 mask-sequence: [0.0, 0]  # randomly mask intervals with this [rate, mean length]
 mask-variants: 0.2  # randomly mask this proportion of variants
+mask-ancestral: [0.0001, 800]  # randomly mask ancestral genome with this [density, mean length]
 inaccessible-bed: "example/example.mask.bed"  # path to bedfile with masked intervals (will be combined with simulated intervals, can be omitted)
 prop-mispolarise: 0.0  # randomly mispolarise this proportion of biallelic variants (or "maf" for major-allele polarisation)
 time-grid: [1, 7, 50]  # [log10 start, log10 stop, number of intervals] for mutation age plot

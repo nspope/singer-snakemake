@@ -61,6 +61,24 @@ def simulate_variant_mask(
     return bitmask
 
 
+def simulate_ancestral_sequence(
+    ts: tskit.TreeSequence,
+    density_missing: float,
+    length_missing: float,
+    seed: int = None,
+) -> str:
+    rng = np.random.default_rng(seed)
+    sequence_length = int(ts.sequence_length)
+    positions = ts.sites_position.astype(np.int64)
+    sequence = rng.choose(["A", "G", "C", "T"], size=sequence_length)
+    ancestral_state, _ = ancestral_state_and_frequency(ts)
+    sequence[positions] = ancestral_state
+    missing = simulate_sequence_mask(ts, density_missing, length_missing, seed) \
+        if density < 1 else np.full(sequence_length, False)
+    sequence[missing] = "N"
+    return "".join(sequence)
+
+
 def ratemap_to_hapmap(
     ratemap: msprime.RateMap, 
     contig_name: str, 
