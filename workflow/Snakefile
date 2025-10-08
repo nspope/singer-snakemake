@@ -339,6 +339,8 @@ rule coalescence_rates:
     params:
         time_grid = STATS_TIME_GRID,
         stratify = STRATIFY_BY,
+        # for debugging:
+        tail_cutoff = config.get("coalrate-tail-cutoff", 0.05),
     script:
         "scripts/coalescence_rates.py"
 
