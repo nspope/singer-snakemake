@@ -6,7 +6,7 @@ demes
 msprime
 scikit-allel
 scipy
-numpy
+numpy>=2.0.0
 pyyaml
 matplotlib
 argparse

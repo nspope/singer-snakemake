@@ -125,6 +125,7 @@ checkpoint chunk_chromosomes:
         mut_rate = os.path.join(CHROM_PATH, "{chrom}.mut_rate.p"),
         recomb_rate = os.path.join(CHROM_PATH, "{chrom}.recomb_rate.p"),
         inaccessible = os.path.join(CHROM_PATH, "{chrom}.inaccessible.p"),
+        polarisation = os.path.join(CHROM_PATH, "{chrom}.polarisation"),
         filtered = os.path.join(CHROM_PATH, "{chrom}.filtered.p"),
         omitted = os.path.join(CHROM_PATH, "{chrom}.omitted.p"),
         metadata = os.path.join(CHROM_PATH, "{chrom}.vcf.samples.p"),
