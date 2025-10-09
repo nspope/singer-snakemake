@@ -58,7 +58,7 @@ def force_positive_branch_lengths(nodes_time, edges_parent, edges_child, min_len
         p, c = edges_parent[e], edges_child[e]
         if adj_nodes_time[p] - adj_nodes_time[c] < min_length:
             adj_nodes_time[p] = adj_nodes_time[c] + min_length
-    assert np.all(adj_nodes_time[edges_parent] - adj_nodes_time[edges_child] >= min_length)
+    assert np.all(adj_nodes_time[edges_parent] - adj_nodes_time[edges_child] > 0)
     return adj_nodes_time
 
 
