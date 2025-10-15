@@ -73,17 +73,20 @@ chunks = pickle.load(open(snakemake.input.chunks, "rb"))
 metadata = pickle.load(open(snakemake.input.metadata, "rb"))
 alleles = pickle.load(open(snakemake.input.alleles, "rb"))
 inaccessible = pickle.load(open(snakemake.input.inaccessible, "rb"))
+omitted = set(pickle.load(open(snakemake.input.omitted, "rb")))
 
 tables = tskit.TableCollection(sequence_length=chunks.sequence_length)
 tables.time_units = "generations"
-nodes, edges, individuals, populations = \
-    tables.nodes, tables.edges, tables.individuals, tables.populations
+#nodes, edges, individuals, populations = \
+#    tables.nodes, tables.edges, tables.individuals, tables.populations
 
 tables.metadata_schema = tskit.MetadataSchema.permissive_json()
-nodes.metadata_schema = tskit.MetadataSchema.permissive_json()
-edges.metadata_schema = tskit.MetadataSchema.permissive_json()
-individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
-populations.metadata_schema = tskit.MetadataSchema.permissive_json()
+tables.nodes.metadata_schema = tskit.MetadataSchema.permissive_json()
+tables.sites.metadata_schema = tskit.MetadataSchema.permissive_json()
+tables.edges.metadata_schema = tskit.MetadataSchema.permissive_json()
+tables.individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
+tables.populations.metadata_schema = tskit.MetadataSchema.permissive_json()
+tables.mutations.metadata_schema = tskit.MetadataSchema.permissive_json()
 
 singer_parameters = []
 polegon_parameters = []
@@ -100,37 +103,38 @@ for i, (params_file, recomb_file, node_file, mutation_file, branch_file) in enum
 
     params = yaml.safe_load(open(params_file))
     block_start = params['singer']['start']
+    # FIXME: change to dict
     singer_parameters.append(params['singer'])
     polegon_parameters.append(params['polegon'])
 
     # nodes
     node_time = np.loadtxt(node_file)
-    num_nodes = nodes.num_rows - num_samples
-    if individuals.num_rows == 0:
+    num_nodes = tables.nodes.num_rows - num_samples
+    if tables.individuals.num_rows == 0:
         population = []
         num_samples = np.sum(node_time == 0.0)
         for meta in metadata: 
-            individuals.add_row(metadata=meta)
+            tables.individuals.add_row(metadata=meta)
             if stratify in meta:  # recode as integer
                 population_name = meta[stratify] 
                 if not population_name in population_map:
                     population_map[population_name] = len(population_map)
-                    populations.add_row(metadata={"name": population_name})
+                    tables.populations.add_row(metadata={"name": population_name})
                 population.append(population_map[population_name])
             else:
                 population.append(-1)
-        ploidy = num_samples / individuals.num_rows
+        ploidy = num_samples / tables.individuals.num_rows
         assert ploidy == 1.0 or ploidy == 2.0
         for i in range(num_samples):
             individual = i // int(ploidy)
-            nodes.add_row(
+            tables.nodes.add_row(
                 flags=tskit.NODE_IS_SAMPLE, 
                 population=population[individual],
                 individual=individual,
             )
     for t in node_time:
         if t > 0.0:
-            nodes.add_row(time=t)
+            tables.nodes.add_row(time=t)
 
     # edges
     edge_span = np.loadtxt(branch_file)
@@ -140,7 +144,7 @@ for i, (params_file, recomb_file, node_file, mutation_file, branch_file) in enum
     child_indices = np.array(edge_span[:, 3], dtype=np.int32)
     parent_indices[parent_indices >= num_samples] += num_nodes
     child_indices[child_indices >= num_samples] += num_nodes
-    edges.append_columns(
+    tables.edges.append_columns(
         left=edge_span[:, 0] + block_start,
         right=edge_span[:, 1] + block_start,
         parent=parent_indices,
@@ -158,6 +162,7 @@ for i, (params_file, recomb_file, node_file, mutation_file, branch_file) in enum
             tables.sites.add_row(
                 position=site_pos,
                 ancestral_state=site_alleles[0],
+                metadata={"omitted": site_pos in omitted},
             )
             mut_pos = mutations[i, 0]
         site_id = tables.sites.num_rows - 1
