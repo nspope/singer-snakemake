@@ -105,6 +105,24 @@ sitemask = np.full(int(hapmap.sequence_length), False)
 sitemask[filtered_positions - 1] = True
 
 
+# sites omitted from dating (list of 1-based positions)
+omit_file = vcf_file.replace(".vcf.gz", ".omit.txt")
+if not os.path.exists(omit_file):
+    logfile.write(f"{tag()} Did not find {omit_file}, will not omit specific variants from ARG dating\n")
+    omitted_positions = np.empty(0, dtype=np.int64)
+else:
+    omitted_positions = np.loadtxt(omit_file).astype(np.int64)
+    if omitted_positions.size:
+        assert np.max(omitted_positions) <= hapmap.sequence_length, "Omitted position exceeds hapmap length"
+        omitted_positions = np.unique(omitted_positions)
+    logfile.write(
+        f"{tag()} List of omitted positions includes {omitted_positions.size} variants "
+        f"that will be used to build topologies but not for dating\n"
+    )
+datemask = np.full(int(hapmap.sequence_length), False)
+datemask[omitted_positions - 1] = True
+
+
 # metadata
 meta_file = vcf_file.replace(".vcf.gz", ".meta.csv")
 if not os.path.exists(meta_file):
@@ -237,11 +255,14 @@ rec_rate = np.diff(hapmap.get_cumulative_mass(windows)) / np.diff(windows)
 
 # tally filtered sequence and variants per window
 num_bases = np.diff(windows)
-# TODO: use np.add.reduceat
 num_accessible = np.array([  # total length of unmasked intervals
     sum(~bitmask[a:b]) for a, b 
     in zip(windows[:-1], windows[1:])
 ])
+# TODO: use np.add.reduceat
+#num_accessible_2 = np.add.reduceat(bitmask, windows) #TODO
+#np.testing.assert_allclose(num_accessible, num_accessible_2)
+#/TODO
 logfile.write(f"{tag()} Counted {sum(num_accessible)} accessible out of {sum(num_bases)} total bases\n")
 num_retained = np.bincount(  # sites passing all filters
     np.digitize(positions - 1, windows) - 1,
@@ -352,7 +373,7 @@ assert num_bases.sum() == bitmask.size
 assert num_accessible.sum() == np.sum(~bitmask)
 assert num_filtered.sum() == filtered_positions.size
 assert num_retained.sum() == positions.size == np.sum(retain)
-# NB: these arrays *may* be recalculated at finer scale to adjust mutation rate
+# NB: some of these arrays may be recalculated at a finer scale to adjust mutation rate
 
 
 # calculate windowed stats and get ballpark Ne estimate from global diversity
@@ -360,27 +381,33 @@ num_stats_windows = int(np.floor(bitmask.size / snakemake.params.stats_window_si
 statistics_windows = np.linspace(0, bitmask.size, num_stats_windows + 1).astype(int)
 statistics_windows_stack = \
     np.column_stack([statistics_windows[:-1] + 1, statistics_windows[1:]])
+statmask = np.logical_and(~bitmask, ~datemask)
+statkeep = statmask[positions - 1]  # statistics should not use sites omitted from dating
+logfile.write(
+    f"{tag()} Using {statkeep.sum()} sites to calculate observed summary statistics "
+    f"(omitting {positions.size - statkeep.sum()} sites that will not be used for dating)\n"
+)
 counts = genotypes.count_alleles(max_allele=1)
 assert counts.shape[1] == 2
 diversity, *_ = allel.windowed_diversity(
-    positions,
-    counts,
+    positions[statkeep],
+    counts[statkeep],
     windows=statistics_windows_stack,
-    is_accessible=~bitmask,
+    is_accessible=statmask,
     fill=0.0,
 )
 tajima_d, *_ = allel.windowed_tajima_d(
-    positions,
-    counts,
+    positions[statkeep],
+    counts[statkeep],
     windows=statistics_windows_stack,
 )
 if snakemake.params.polarised:
-    afs = allel.sfs(counts[:, 1], n=2 * samples.size) / np.sum(~bitmask) 
+    afs = allel.sfs(counts[statkeep, 1], n=2 * samples.size) / np.sum(statmask) 
 else:
-    afs = allel.sfs_folded(counts, n=2 * samples.size) / np.sum(~bitmask)
+    afs = allel.sfs_folded(counts[statkeep], n=2 * samples.size) / np.sum(statmask)
 adjustment = sum(num_retained) / sum(num_retained + num_filtered)
 Ne = (
-    allel.sequence_diversity(positions, counts, is_accessible=~bitmask) *
+    allel.sequence_diversity(positions[statkeep], counts[statkeep], is_accessible=statmask) *
     1 / (4 * mutation_rate * adjustment)
 )
 logfile.write(
@@ -388,16 +415,6 @@ logfile.write(
     f"rate by factor of {adjustment:.3f} to account for filtered sites\n"
 )
 
-
-# NB: to adjust mutation rate to account for missing data, there are two relevant
-# types of missingness: inaccessible intervals and filtered sites. The adjustment
-# has the form,
-#
-# `adjusted_mu = mu * (filtered_intervals / sequence_length) * (filtered_sites / segregating_sites)`
-#
-# where the last term is calculated *discounting* sites that lie in filtered
-# intervals. Alternatively, we can set the mutation rate to zero within each 
-# filtered interval, and omit the corresponding term from the adjusted rate.
 
 # adjust mutation rate to account for masked sequence in each chunk, either by
 # making a rate map where masked sequence has zero rate or incorporating into
@@ -410,20 +427,23 @@ if snakemake.params.model_masked_sequence:
     # replace `prop_inaccessible` with a per-base binary mask
     prop_inaccessible, breakpoints = bitmask_to_arrays(bitmask, insert_breakpoints=windows)
     assert breakpoints[-1] == windows[-1] and breakpoints[0] == windows[0]
+    logfile.write(
+        f"{tag()} Fine-scale mutation rate map has {breakpoints.size - 1} "
+        f"intervals, with {int(prop_inaccessible.sum())} that are masked\n"
+    )
     # map `prop_filtered` onto fine-scale intervals (e.g. use average within chunk)
     # FIXME: would it be better to have a fine-scale `prop_filtered`? Would need to smooth. 
     window_index = np.digitize(breakpoints[:-1], windows) - 1
     assert window_index.max() == windows.size - 2 and window_index.min() == 0
     prop_filtered = prop_filtered[window_index]
-    logfile.write(
-        f"{tag()} Fine-scale mutation rate map has {breakpoints.size - 1} "
-        f"intervals, with {int(prop_inaccessible.sum())} that are masked\n"
-    )
+    # FIXME: need to adjust interval length to account for omitted variants, as these bases cannot carry
+    # other mutations-- however doing so will mask these variants, which we want to retain in the
+    # tree sequences. The bias should be minimal provided omitted variants are few.
 else:
     breakpoints = windows.copy()
     logfile.write(
         f"{tag()} Adjusting per-chunk mutation rate to account for filtered sites "
-        f"and masked intervals\n"
+        f"and masked intervals (for debugging only, will likely result in biased dates)\n"
     )
 adj_mu = (1 - prop_inaccessible) * (1 - prop_filtered) * mutation_rate
 
@@ -457,6 +477,7 @@ pickle.dump(inaccessible, open(snakemake.output.inaccessible, "wb"))
 pickle.dump(filtered, open(snakemake.output.filtered, "wb"))
 pickle.dump(chunks, open(snakemake.output.chunks, "wb"))
 pickle.dump(stats_windows, open(snakemake.output.windows, "wb"))
+pickle.dump(omitted_positions, open(snakemake.output.omitted, "wb"))
 
 # FIXME: there is a bug in SINGER where fine-scale rate maps are never used
 # and the mean rate is used instead. When this is fixed, explore using
@@ -587,11 +608,11 @@ if stratify is not None:
     for i in range(len(strata)):
         for j in range(i, len(strata)):
             divergence, *_ = allel.windowed_divergence(
-                positions,
-                strata_counts[strata[i]],
-                strata_counts[strata[j]],
+                positions[statkeep],
+                strata_counts[strata[i]][statkeep],
+                strata_counts[strata[j]][statkeep],
                 windows=statistics_windows_stack,
-                is_accessible=~bitmask,
+                is_accessible=statmask,
                 fill=0.0,
             )
             divergence[~filter_windows] = np.nan
@@ -599,14 +620,14 @@ if stratify is not None:
 
         if snakemake.params.polarised:
             afs = allel.sfs(
-                strata_counts[strata[i]][:, 1], 
+                strata_counts[strata[i]][statkeep, 1], 
                 n=2 * len(sample_sets[strata[i]]),
-            ) / np.sum(~bitmask)
+            ) / np.sum(statmask)
         else:
             afs = allel.sfs_folded(
-                strata_counts[strata[i]], 
+                strata_counts[strata[i]][statkeep], 
                 n=2 * len(sample_sets[strata[i]]),
-            ) / np.sum(~bitmask)
+            ) / np.sum(statmask)
         strata_afs.append(afs)
 
     strata_divergence = np.stack(strata_divergence).T

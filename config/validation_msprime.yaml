@@ -2,7 +2,7 @@
 output-dir: "validation-msprime-output"  # where to place validation results and simulations
 random-seed: 1024  # global random seed
 num-replicates: 5  # number of replicate ARGs to simulate
-mask-sequence: [0.0, 0]  # randomly mask intervals with this [density, mean length]
+mask-sequence: [0.0, 0]  # randomly mask intervals with this [rate, mean length]
 mask-variants: 0.2  # randomly mask this proportion of variants
 inaccessible-bed: "example/example.mask.bed"  # path to bedfile with masked intervals (will be combined with simulated intervals, can be omitted)
 prop-mispolarise: 0.0  # randomly mispolarise this proportion of biallelic variants (or "maf" for major-allele polarisation)

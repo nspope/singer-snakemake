@@ -43,11 +43,13 @@ def ratemap_to_text(ratemap: msprime.RateMap, *, replace_nan_with: float = 0.0) 
     return text 
 
 
-def absorb_mutations_above_root(ts: tskit.TreeSequence) -> tskit.TreeSequence:
+def absorb_mutations_above_root(
+    ts: tskit.TreeSequence, 
+    record_flipped: bool = True,
+) -> tskit.TreeSequence:
     """
     Remove mutations above the root, and change the ancestral state of the
-    site to match the state of the root node. Compute times for remaining
-    mutations
+    site to match the state of the root node. 
     """
     tab = ts.dump_tables()
     tab.mutations.clear()
@@ -61,6 +63,7 @@ def absorb_mutations_above_root(ts: tskit.TreeSequence) -> tskit.TreeSequence:
         tree.seek(s.position)
         assert len(tree.roots) == 1
         ancestral_state = s.ancestral_state
+        metadata = s.metadata
         for m in s.mutations:
             if m.node == tree.root:
                 ancestral_state = m.derived_state
@@ -72,9 +75,11 @@ def absorb_mutations_above_root(ts: tskit.TreeSequence) -> tskit.TreeSequence:
                     metadata=m.metadata,
                     derived_state=m.derived_state,
                 )
+        if record_flipped:
+            metadata["flipped"] = ancestral_state != s.ancestral_state
         tab.sites.add_row(
             position=s.position,
-            metadata=s.metadata,
+            metadata=metadata,
             ancestral_state=ancestral_state,
         )
     tab.sort()

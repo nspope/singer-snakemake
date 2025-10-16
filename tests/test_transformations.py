@@ -90,6 +90,9 @@ def test_absorb_mutations_above_root():
         random_seed=1,
     )
     ts = msprime.sim_mutations(ts, rate=0.1, random_seed=2)
+    tab = ts.dump_tables()
+    tab.sites.metadata_schema = tskit.MetadataSchema.permissive_json()
+    ts = tab.tree_sequence()
     mispolarise = np.full(ts.num_sites, False)
     mispolarise[:ts.num_sites // 2] = True
     ts_polarise = repolarise_tree_sequence(ts, mispolarise)
@@ -99,6 +102,9 @@ def test_absorb_mutations_above_root():
     geno_reverted = ts_reverted.genotype_matrix()
     assert np.any(geno_polarise != geno_original)
     assert np.all(geno_reverted == geno_original)
+    was_flipped = np.array([s.metadata["flipped"] for s in ts_reverted.sites()])
+    biallelic = np.bincount(ts.mutations_site, minlength=ts.num_sites) == 1
+    assert np.all(np.logical_and(biallelic, mispolarise) == was_flipped)
 
 
 def test_major_allele_repolarisation():

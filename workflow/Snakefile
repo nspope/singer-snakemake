@@ -126,6 +126,7 @@ checkpoint chunk_chromosomes:
         recomb_rate = os.path.join(CHROM_PATH, "{chrom}.recomb_rate.p"),
         inaccessible = os.path.join(CHROM_PATH, "{chrom}.inaccessible.p"),
         filtered = os.path.join(CHROM_PATH, "{chrom}.filtered.p"),
+        omitted = os.path.join(CHROM_PATH, "{chrom}.omitted.p"),
         metadata = os.path.join(CHROM_PATH, "{chrom}.vcf.samples.p"),
         chunks = os.path.join(CHROM_PATH, "{chrom}.chunks.p"),
         windows = os.path.join(CHROM_PATH, "{chrom}.windows.p"),
@@ -201,6 +202,7 @@ rule run_polegon:
         branches = os.path.join(CHUNK_PATH, "{id}_branches_{rep}.txt"),
         nodes = os.path.join(CHUNK_PATH, "{id}_nodes_{rep}.txt"),
         muts = os.path.join(CHUNK_PATH, "{id}_muts_{rep}.txt"),
+        omitted = rules.chunk_chromosomes.output.omitted,
     output:  
         # TODO mark temp
         nodes = os.path.join(CHUNK_PATH, "{id}_polegon_{rep}.txt"),
@@ -209,6 +211,7 @@ rule run_polegon:
         # for debugging:
         use_polegon = config.get("use-polegon", True),
         use_mutational_span = config.get("use-mutational-span", True),
+        drop_omitted = config.get("drop-omitted", True),
     log:
         log = os.path.join(CHUNK_PATH, "{id}.{rep}.log"),
     script:
@@ -241,6 +244,7 @@ rule merge_chunks:
     input:
         chunks = rules.chunk_chromosomes.output.chunks,
         inaccessible = rules.chunk_chromosomes.output.inaccessible,
+        omitted = rules.chunk_chromosomes.output.omitted,
         metadata = rules.chunk_chromosomes.output.metadata,
         alleles = rules.chunk_chromosomes.output.alleles,
         params = merge_chunks_params,

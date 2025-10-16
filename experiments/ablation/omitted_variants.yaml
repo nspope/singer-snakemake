@@ -1,5 +1,5 @@
 # --- settings for validation workflow using a stdpopsim species and model --- #
-output-dir: "ablation-missing-data"  # where to place validation results and simulations
+output-dir: "ablation-omitted"  # where to place validation results and simulations
 random-seed: 1024  # global random seed
 num-replicates: 5  # number of replicate ARGs to simulate
 mask-sequence: [1.0e-9, 800]  # randomly mask intervals with this [density, mean length]
@@ -20,3 +20,6 @@ stdpopsim-config:  # simulation settings
         left: 180.0e+6
         right: 230.0e+6
         genetic_map: "HapMapII_GRCh38"
+
+# hidden arguments
+record-structural-variants: True

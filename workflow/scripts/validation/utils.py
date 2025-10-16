@@ -14,27 +14,38 @@ from typing import List
 
 def simulate_sequence_mask(
     ts: tskit.TreeSequence, 
-    density: float, 
+    rate: float, 
     length: float, 
     seed: int = None,
+    record_variants: bool = False,
+    offset: int = 2,
 ) -> np.ndarray:
     """
-    Simulate a sequence mask by drawing interval locations from a Poisson process
-    and interval lengths from a geometric distribution. Any missing flanks
-    in the tree sequence will be included.
+    Simulate a sequence mask by drawing neutral variants (e.g. structural
+    variants) with lengths from a geometric distribution. The causal variant is
+    added to the tree sequence two bases before the start of the associated
+    masked interval (this ensures that, after writing out one-based positions,
+    the variant directly borders the interval).  Any missing flanks in the tree
+    sequence will be included in the mask.
     """
     rng = np.random.default_rng(seed)
+    msp_seed = rng.integers(1, 2 ** 32 - 1, size=1)
     bitmask = np.full(int(ts.sequence_length), False)
     left, right = int(ts.edges_left.min()), int(ts.edges_right.max())
     bitmask[:left] = True
     bitmask[right:] = True
-    if length > 0 and density > 0:
-        num_intervals = int(density * (right - left))
-        interval_start = rng.integers(left, right, size=num_intervals)
-        interval_length = rng.geometric(1.0 / length, size=num_intervals)
+    if length > 0 and rate > 0:
+        tsm = msprime.sim_mutations(ts, rate=rate, random_seed=msp_seed, keep=True)
+        causal = ~np.isin(tsm.sites_position, ts.sites_position)
+        interval_start = tsm.sites_position[causal].astype(np.int64) + offset
+        interval_length = rng.geometric(1.0 / length, size=interval_start.size)
         for s, l in zip(interval_start, interval_length):
             bitmask[s:s+l] = True
-    return bitmask
+    return (
+        tsm if record_variants else ts, 
+        causal if record_variants else np.full(ts.num_sites, False), 
+        bitmask,
+    )
 
 
 def simulate_variant_mask(

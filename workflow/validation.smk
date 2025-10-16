@@ -122,6 +122,8 @@ rule simulate_arg:
         prop_mispolar = PROP_MISPOLAR,
         inaccessible_bed = INACCESSIBLE_BED,
         config = SIMULATION_CONFIG,
+        # FIXME: hidden for now
+        record_structural_variants = config.get("record-structural-variants", False),
     script: SIMULATION_SCRIPT
 
 

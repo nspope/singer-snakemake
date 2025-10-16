@@ -25,17 +25,39 @@ def tag():
 logfile = open(snakemake.log.log, "w")
 use_polegon = snakemake.params.use_polegon
 use_mutational_span = snakemake.params.use_mutational_span
+drop_omitted = snakemake.params.drop_omitted
 
 if use_polegon:
-    params = yaml.safe_load(open(snakemake.input.params)).pop("polegon")
-    seed = params.pop("seed") + int(snakemake.wildcards.rep)
+    singer_params = yaml.safe_load(open(snakemake.input.params)).pop("singer")
+    polegon_params = yaml.safe_load(open(snakemake.input.params)).pop("polegon")
+    seed = polegon_params.pop("seed") + int(snakemake.wildcards.rep)
+
     # FIXME: Ne is lower by factor of two relative to `polegon_master`.
     # This shouldn't matter, it cancels during rescaling, but look into it.
 
     # POLEGON expects inputs named slightly differently than SINGER output
     prefix = snakemake.input.muts.replace("_muts_", "_").removesuffix(".txt")
-    shutil.copy(snakemake.input.muts, f"{prefix}_muts.txt")
     shutil.copy(snakemake.input.nodes, f"{prefix}_nodes.txt")
+
+    # Adjust mutation list to omit specified sites. These will not be used for
+    # dating, and are effectively inaccessible sequence. However, they were used to
+    # build the topologies and will be retained in the trees.
+    if drop_omitted:
+        # FIXME: for a fully correct clock, the bases occupied by omitted sites
+        # should be subtracted from edge spans-- but if we assume omitted sites
+        # are a very small proportion of edge spans, then the bias should be
+        # minimal.
+        left, right = singer_params["start"], singer_params["end"]
+        omitted_positions = pickle.load(open(snakemake.input.omitted, "rb"))
+        in_bounds = np.logical_and(omitted_positions >= left, omitted_positions < right)
+        omitted_positions = omitted_positions[in_bounds] - left
+        logfile.write(f"{tag()} Read list of {omitted_positions.size} omitted positions\n")
+        mutations = np.loadtxt(snakemake.input.muts)
+        omitted_mutations = np.isin(mutations[:, 0].astype(np.int64), omitted_positions)
+        logfile.write(f"{tag()} Omitting {omitted_mutations.sum()} mutations from dating\n")
+        np.savetxt(f"{prefix}_muts.txt", mutations[~omitted_mutations])
+    else:
+        shutil.copy(snakemake.input.muts, f"{prefix}_muts.txt")
 
     # Adjust branch spans to reflect masked sequence, and absorb mutation rate
     # into span.  This is necessary because POLEGON doesn't use the "average
@@ -47,8 +69,8 @@ if use_polegon:
             f"{tag()} Adjusting branch spans input ({prefix}_branches.txt) "
             f"to reflect mutation rate map and setting mutation rate to unity\n"
         )
-        params["m"] = 1.0
-        mutation_map = params.pop("mutation_map")
+        polegon_params["m"] = 1.0
+        mutation_map = polegon_params.pop("mutation_map")
         adjusted_mu = np.loadtxt(mutation_map, ndmin=2)
         assert np.all(adjusted_mu[:-1, 1] == adjusted_mu[1:, 0])
         adjusted_mu = msprime.RateMap(
@@ -71,7 +93,7 @@ if use_polegon:
         "-input", f"{prefix}",
         "-seed", f"{seed}",
     ]
-    for arg, val in params.items():
+    for arg, val in polegon_params.items():
         invocation += f"-{arg} {val}".split()
     
     logfile.write(f"{tag()} " + " ".join(invocation) + "\n")

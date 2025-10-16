@@ -39,8 +39,12 @@ accessible = msprime.RateMap(
 )
 accessible_bp = np.diff(accessible.get_cumulative_mass(windows.position))
 
+# remove sites that were omitted from dating
+omitted = np.array([s.metadata["omitted"] for s in trees.sites()])
+trees = trees.delete_sites(np.flatnonzero(omitted))
+
 # statistics that depend on observed sites
-repolarised = np.mean([s.ancestral_state != alleles[s.position][0] for s in trees.sites()])
+repolarised = np.mean([s.metadata["flipped"] for s in trees.sites()])
 multimapped = np.mean(np.bincount(trees.mutations_site, minlength=trees.num_sites))
 # TODO: split by input frequency?
 
