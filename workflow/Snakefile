@@ -58,9 +58,10 @@ assert POLEGON_MCMC_BURNIN < POLEGON_MCMC_SAMPLES, "Burn-in exceeds number of PO
 STATS_TIME_GRID = config["stats-time-grid"]
 STATS_WINDOW_SIZE = float(config["stats-window-size"])
 
+# use a modified SINGER binary that allows per-site polarisation
 SINGER_BINARY = os.path.join(
    workflow.basedir, os.path.pardir, "resources", 
-   "singer-0.1.8-beta-linux-x86_64", "singer",
+   "singer-0.1.8-beta-linux-x86_64", "singer-custom",
 )
 SINGER_BINARY = config.get("singer-binary", SINGER_BINARY)
 POLEGON_BINARY = os.path.join(
@@ -157,6 +158,7 @@ checkpoint chunk_chromosomes:
         # for debugging:
         model_masked_sequence = config.get("model-masked-sequence", True),
         random_polarisation = config.get("random-polarisation", True),
+        remove_unpolarised = config.get("remove-unpolarised", False),
     script:
         "scripts/chunk_chromosomes.py"
 

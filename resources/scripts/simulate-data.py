@@ -1,7 +1,9 @@
 import msprime
 import numpy as np
+import tskit
 import tszip
 import gzip
+import textwrap
 import os
 import csv
 import demes
@@ -24,7 +26,8 @@ parser.add_argument("--disable-mask", action="store_true")
 parser.add_argument("--disable-meta", action="store_true")
 parser.add_argument("--disable-hapmap", action="store_true")
 parser.add_argument("--disable-filter", action="store_true")
-parser.add_argument("--disable-ancestral", action="store_true") # TODO
+parser.add_argument("--disable-ancestral", action="store_true")
+parser.add_argument("--disable-repolarise", action="store_true")
 parser.add_argument("--haploid", action="store_true")
 parser.add_argument("--output-prefix", default="example/example", type=str)
 parser.add_argument("--remove-missing", action="store_true")
@@ -35,19 +38,26 @@ rng = np.random.default_rng(args.seed)
 dir_name = os.path.dirname(args.output_prefix)
 if not os.path.exists(dir_name): os.makedirs(dir_name)
 
+
 # linearly increasing recombination rate
 recmap_pos = np.linspace(0, args.sequence_length, 1001)
 recmap_rates = rng.uniform(0, args.mutation_rate * (0.01 + recmap_pos[:-1] / recmap_pos[-1]))
 if args.disable_hapmap: recmap_rates[:] = args.mutation_rate
 recmap = msprime.RateMap(position=recmap_pos, rate=recmap_rates)
 
+
+# island model with outgroup
 demo = msprime.Demography.island_model(
     initial_size=[args.population_size for _ in range(args.num_populations)], 
     migration_rate=args.migration_rate,
 )
+populations = [pop.name for pop in demo.populations]
 samples = [
-    msprime.SampleSet(num_samples=args.samples, population=pop.name, ploidy=1 if args.haploid else 2) 
-    for pop in demo.populations
+    msprime.SampleSet(
+        num_samples=args.samples, 
+        population=pop, 
+        ploidy=1 if args.haploid else 2,
+    ) for pop in populations
 ]
 ts = msprime.sim_ancestry(
     samples=samples,
@@ -56,6 +66,16 @@ ts = msprime.sim_ancestry(
     random_seed=args.seed,
 )
 ts = msprime.sim_mutations(ts, rate=args.mutation_rate, random_seed=args.seed)
+
+
+# make "ancestral" sequence, setting sites in random intervals to "N"
+ancestral_sequence = np.full(int(ts.sequence_length), "N")
+for s in ts.sites():
+    ancestral_sequence[int(s.position)] = s.ancestral_state
+mask_start = msprime.sim_mutations(ts, rate=0.5e-9, keep=False, random_seed=args.seed + 1000).sites_position.astype(np.int64)
+mask_stop = mask_start + rng.geometric(1 / 800, size=mask_start.size).astype(np.int64)
+for a, b in zip(mask_start, mask_stop):
+    ancestral_sequence[a:b] = "N"
 
 
 # sporadic missing data with large missing segment in center
@@ -112,6 +132,37 @@ if args.remove_missing:
     ts = ts.delete_sites(remove_sites)
 
 
+# save trees for reference
+tszip.compress(ts, f"{args.output_prefix}.tsz")
+
+
+# randomly choose ref/alt state
+if not args.disable_repolarise:
+    repolarise = rng.binomial(1, 0.5, size=ts.num_sites).astype(bool)
+    tab = ts.dump_tables()
+    tab.mutations.clear()
+    tab.sites.clear()
+    tree = ts.first()
+    for site in ts.sites():
+        tree.seek(site.position)
+        biallelic = len(site.mutations) == 1
+        if repolarise[site.id] and biallelic:
+            mutation = next(iter(site.mutations))
+            for r in tree.roots:
+                tab.mutations.add_row(site=site.id, node=r, derived_state=site.ancestral_state)
+            tab.sites.add_row(position=site.position, ancestral_state=mutation.derived_state)
+        else:
+            tab.sites.add_row(position=site.position, ancestral_state=site.ancestral_state)
+        for mutation in site.mutations:
+            tab.mutations.add_row(site=mutation.site, node=mutation.node, derived_state=mutation.derived_state)
+    tab.sort()
+    tab.build_index()
+    tab.compute_mutation_parents()
+    assert tab.sites.num_rows == ts.num_sites
+    assert np.all(tab.sites.position == ts.sites_position)
+    ts = tab.tree_sequence()
+
+
 # write out VCF
 population_names = np.concatenate([np.repeat(s.population, s.num_samples) for s in samples])
 individual_names = [f"Sample{i:03d}" for i in range(population_names.size)]
@@ -120,8 +171,9 @@ ts.write_vcf(
     position_transform=lambda x: np.array(x, dtype=np.int64) + 1, 
     individual_names=individual_names,
 )
-tszip.compress(ts, f"{args.output_prefix}.tsz")
 
+
+# write out recombination map
 hapmap_path = f"{args.output_prefix}.hapmap"
 if os.path.exists(hapmap_path): os.remove(hapmap_path)
 if not args.disable_hapmap:
@@ -140,6 +192,8 @@ if not args.disable_hapmap:
     np.testing.assert_allclose(hapmap_check.rate, recmap.rate, atol=1e-12)
     np.testing.assert_allclose(hapmap_check.position, recmap.position)
 
+
+# write out missing data mask
 mask_path = f"{args.output_prefix}.mask.bed"
 if os.path.exists(mask_path): os.remove(mask_path)
 if not args.disable_mask:
@@ -149,6 +203,8 @@ if not args.disable_mask:
     bedmask_check = np.loadtxt(mask_path, usecols=[1,2])
     np.testing.assert_allclose(bedmask, bedmask_check)
 
+
+# write out metadata
 meta_path = f"{args.output_prefix}.meta.csv"
 if os.path.exists(meta_path): os.remove(meta_path)
 if not args.disable_meta:
@@ -163,6 +219,8 @@ if not args.disable_meta:
         assert row[0] == individual_names[i]
         assert row[1] == population_names[i]
 
+
+# write out filtered sites
 filter_path = f"{args.output_prefix}.filter.txt"
 if os.path.exists(filter_path): os.remove(filter_path)
 if not args.disable_filter:
@@ -172,5 +230,16 @@ if not args.disable_filter:
     filter_check = np.loadtxt(filter_path)
     assert np.allclose(filter_check, sitemask)
 
+
+# write out demography
 demog_path = f"{args.output_prefix}.demes.yaml"
 demes.dump(demo.to_demes(), demog_path)
+
+
+# write out ancestral sequence
+ancestral_path = f"{args.output_prefix}.ancestral.fa.gz"
+if os.path.exists(ancestral_path): os.remove(ancestral_path)
+if not args.disable_ancestral:
+    with gzip.open(ancestral_path, "wt") as fastafile:
+        fastafile.write(">1\n")
+        fastafile.write("".join(ancestral_sequence) + "\n")

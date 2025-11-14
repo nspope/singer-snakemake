@@ -63,7 +63,7 @@ if not os.path.exists(ancfa_file):
         sequence_length = positions.max() + 1
     anc_allele = ref_allele.copy()
 else:
-    ancfa = read_single_fasta(gzip.open(ancfa_file))
+    ancfa = read_single_fasta(gzip.open(ancfa_file, "rt"))
     if sequence_length is None:
         sequence_length = ancfa.size
         assert sequence_length >= positions.max(), \
@@ -97,7 +97,7 @@ else:
     hapmap = msprime.RateMap.read_hapmap(hapmap_file)
     if sequence_length is None:
         sequence_length = int(hapmap.sequence_length)
-        assert sequence_length >= max_variant_pos, \
+        assert sequence_length >= positions.max(), \
             "Variant positions exceed sequence length of recombination map"
     else:
         assert hapmap.sequence_length == sequence_length, \
@@ -186,7 +186,7 @@ if ploidy == 1:
 
 # polarise alleles
 has_ancestral_state = np.logical_or(ref_allele == anc_allele, alt_allele == anc_allele)
-has_binary_state = genotypes.max(axis=(-2, -1)) == 1
+has_binary_state = calldata.max(axis=(-2, -1)) == 1
 polarised = np.logical_and.reduce([has_ancestral_state, has_binary_state, anc_allele != 'N', anc_allele != '-'])
 flip_alleles = np.logical_and(polarised, alt_allele == anc_allele)
 calldata[flip_alleles] = 1 - calldata[flip_alleles]
@@ -214,7 +214,7 @@ logfile.write(f"{tag()} Removed {np.sum(~filter_accessible)} sites occuring in m
 filter_unmasked = ~sitemask[positions - 1]
 logfile.write(f"{tag()} Removed {np.sum(~filter_unmasked)} sites explicitly marked as filtered SNPs\n")
 filter_polarised = np.full(positions.size, True)
-if snakemake.params.polarised and snakemake.params.remove_unpolarised_sites: #TODO
+if snakemake.params.polarised and snakemake.params.remove_unpolarised:
     filter_polarised[:] = polarised
     logfile.write(f"{tag()} Removed {np.sum(~filter_polarised)} sites that could not be polarised\n")
 retain = np.logical_and.reduce([
@@ -600,8 +600,8 @@ if snakemake.params.random_polarisation:
     flip_alleles = np.full(polarised.size, False)
     flip_alleles[~polarised] = rng.binomial(1, 0.5, size=np.sum(~polarised))
     logfile.write(
-        f"{tag()} Randomly choosing reference/alternate for {flip_alleles.sum()} "
-        f"(of {np.sum(~polarised)}) unpolarised variants\n"
+        f"{tag()} For random initialization of {np.sum(~polarised)} unpolarised "
+        f"variants, swapping reference/alternate for {flip_alleles.sum()} sites\n"
     )
     ref_allele[flip_alleles], alt_allele[flip_alleles] = \
         alt_allele[flip_alleles], ref_allele[flip_alleles]
@@ -619,7 +619,7 @@ np.savetxt(snakemake.output.polarisation, polarisation)
 # write out filtered vcf
 write_minimal_vcf(
     open(snakemake.output.vcf, "w"),
-    samples, variant_chrom, variant_pos, variant_id,
+    samples, variant_chrom, positions, variant_id,
     ref_allele, alt_allele, calldata,
 )
 

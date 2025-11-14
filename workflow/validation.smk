@@ -32,6 +32,7 @@ NUM_REPLICATES = int(config["num-replicates"])
 MASK_SEQUENCE = config["mask-sequence"]
 MASK_VARIANTS = float(config["mask-variants"])
 INACCESSIBLE_BED = config.get("inaccessible-bed", None)
+UNPOLARISED_BED = config.get("unpolarised-bed", None)
 PROP_MISPOLAR = config["prop-mispolarise"]
 TIME_GRID = np.append(np.logspace(*config["time-grid"]), np.inf)
 PROJECT_TO = config["project-afs-to"]
@@ -121,6 +122,7 @@ rule simulate_arg:
         mask_variants = MASK_VARIANTS,
         prop_mispolar = PROP_MISPOLAR,
         inaccessible_bed = INACCESSIBLE_BED,
+        unpolarised_bed = UNPOLARISED_BED,
         config = SIMULATION_CONFIG,
         # FIXME: hidden for now
         record_structural_variants = config.get("record-structural-variants", False),

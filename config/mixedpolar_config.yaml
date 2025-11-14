@@ -28,3 +28,7 @@ polegon-max-step: 10.0 # step size used in proposal for POLEGON dating
 # --- summary statistics ---
 stats-time-grid: [1, 7, 25]  # [log10 start, log10 stop, number of intervals] for coalescence rates, etc
 stats-window-size: 5.0e4 # size of genomic windows in base pairs for comparing expected vs observed
+
+# --- hidden ---
+singer-binary: "/home/natep/projects/SINGER/SINGER/SINGER/singer"
+

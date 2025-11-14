@@ -21,7 +21,7 @@ from utils import bed_to_bitmask
 from utils import assert_valid_bedmask
 from utils import assert_valid_hapmap
 from utils import repolarise_tree_sequence
-from utils import simulate_ancestral_sequence
+from utils import extract_ancestral_sequence
 
 warnings.filterwarnings("ignore")
 
@@ -35,10 +35,11 @@ contig_name, *_ = contig.coordinates
 
 interval_mask_rate, interval_mask_length = snakemake.params.mask_sequence
 record_structural_variants = snakemake.params.record_structural_variants
-ancestral_mask_density, ancestral_mask_length = snakemake.params.mask_ancestral
+ancestral_mask_rate, ancestral_mask_length = snakemake.params.mask_ancestral
 variant_mask_prop = snakemake.params.mask_variants
 mispolarised_prop = snakemake.params.prop_mispolar
 inaccessible_bed = snakemake.params.inaccessible_bed
+unpolarised_bed = snakemake.params.unpolarised_bed
 seed = int(snakemake.wildcards.chrom)
 
 # simulate data
@@ -75,9 +76,19 @@ variant_mask[sv_mask] = False
 site_masked = np.logical_or(sequence_mask[site_position], variant_mask)
 ts = ts.delete_sites(np.flatnonzero(site_masked))
 
-# simulate ancestral sequence and sites to mispolarise
-ancestral_sequence = simulate_ancestral_sequence(ts, ancestral_mask_density, ancestral_mask_length, subseed[3])
-repolarise = simulate_mispolarisation(ts, mispolarised_prop, subseed[4])
+# simulate ancestral sequence
+ancestral_sequence = extract_ancestral_sequence(ts)
+_, _, ancestral_mask = simulate_sequence_mask(
+    ts,
+    rate=ancestral_mask_rate,
+    length=ancestral_mask_length,
+    seed=subseed[4],
+)
+bed_to_bitmask(unpolarised_bed, ancestral_mask) # applied on top of simulated mask
+ancestral_sequence[ancestral_mask] = "N"
+
+# simulate sites to repolarise
+repolarise = simulate_mispolarisation(ts, mispolarised_prop, subseed[5])
 
 # write out sequence mask as bed
 bedmask = open(f"{prefix}.mask.bed", "w")
