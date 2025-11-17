@@ -6,6 +6,7 @@ Part of https://github.com/nspope/singer-snakemake.
 
 import csv
 import os
+import gzip
 import msprime
 import numpy as np
 import allel
@@ -15,11 +16,15 @@ import pickle
 import warnings
 from collections import defaultdict
 from datetime import datetime
+from numpy.dtypes import StringDType
 
 warnings.simplefilter('ignore')
 
 from utils import bitmask_to_arrays
 from utils import ratemap_to_text
+from utils import read_single_fasta
+from utils import write_minimal_vcf
+
 
 # --- lib --- #
 
@@ -27,37 +32,51 @@ def tag():
     return f"[singer-snakemake::{snakemake.rule}::{str(datetime.now())}]"
 
 
-def write_minimal_vcf(handle, sample_names, CHROM, POS, ID, REF, ALT, GT): 
-    """
-    Write a minimal biallelic diploid VCF
-    """
-    assert CHROM.size == POS.size == ID.size == REF.size
-    assert ALT.ndim == 1 and ALT.size == CHROM.size
-    assert GT.shape[0] == CHROM.size and GT.shape[1] == sample_names.size and GT.shape[2] == 2
-    assert np.all(np.diff(POS) > 0), "Positions non-increasing in VCF"
-    handle.write("##fileformat=VCFv4.2\n")
-    handle.write("##source=\"singer-snakemake::chunk_chromosomes\"\n")
-    handle.write("##FILTER=<ID=PASS,Description=\"All filters passed\">\n")
-    handle.write("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n")
-    handle.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT")
-    for sample in sample_names: handle.write(f"\t{sample}")
-    handle.write("\n")
-    for chrom, pos, id, ref, alt, gt in zip(CHROM, POS, ID, REF, ALT, GT):
-        handle.write(f"{chrom}\t{pos}\t{id}\t{ref}\t{alt}\t.\tPASS\t.\tGT")
-        for (a, b) in gt: handle.write(f"\t{a}|{b}")
-        handle.write("\n")
-
-
 # --- implm --- #
 
 logfile = open(snakemake.log.log, "w")
-logfile.write(f"{tag()} Random seed {snakemake.params.seed}\n")
+logfile.write(f"{tag()} Using random seed {snakemake.params.seed}\n")
 rng = np.random.default_rng(snakemake.params.seed)
 stratify = snakemake.params.stratify
 
 vcf_file = snakemake.input.vcf
 vcf = allel.read_vcf(vcf_file)
-logfile.write(f"{tag()} Read {vcf['variants/POS'].size} variants and {vcf['samples'].size} samples from {vcf_file}\n")
+samples = vcf['samples'].astype(StringDType)
+positions = vcf['variants/POS'].astype(np.int64)
+ref_allele = vcf['variants/REF'].astype(StringDType)
+alt_allele = vcf['variants/ALT'][:, 0].astype(StringDType)
+variant_id = vcf['variants/ID'].astype(StringDType)
+variant_chrom = vcf['variants/CHROM'].astype(StringDType)
+calldata = vcf['calldata/GT'].astype(np.int8)
+sequence_length = None
+logfile.write(f"{tag()} Read {positions.size} variants and {samples.size} samples from {vcf_file}\n")
+
+
+# ancestral states
+ancfa_file = vcf_file.replace(".vcf.gz", ".ancestral.fa.gz")
+if not os.path.exists(ancfa_file):
+    logfile.write(
+        f"{tag()} Did not find {ancfa_file}, treating variants as all "
+        f"{'polarised' if snakemake.params.polarised else 'unpolarised'}\n"
+    )
+    if sequence_length is None:
+        sequence_length = positions.max() + 1
+    anc_allele = ref_allele.copy()
+else:
+    ancfa = read_single_fasta(gzip.open(ancfa_file, "rt"))
+    if sequence_length is None:
+        sequence_length = ancfa.size
+        assert sequence_length >= positions.max(), \
+            "Variant positions exceed sequence length of ancestral fasta"
+    else:
+        assert ancfa.size == sequence_length, \
+            "Mismatch between ancestral fasta and sequence length"
+    logfile.write(
+        f"{tag()} Found {ancfa_file} with {sequence_length} bases, "
+        f"ignoring 'polarised' flag and using ancestral state where "
+        f"available (converted to uppercase)\n"
+    )
+    anc_allele = np.char.upper(ancfa[positions - 1].astype(StringDType))
 
 
 # recombination map
@@ -68,12 +87,21 @@ if not os.path.exists(hapmap_file):
         f"{tag()} Did not find {hapmap_file}, using default recombination "
         f"rate of {recombination_rate}\n"
     )
+    if sequence_length is None:
+        sequence_length = positions.max() + 1
     hapmap = msprime.RateMap(
-        position=np.array([0.0, np.max(vcf['variants/POS']) + 1.0]),
+        position=np.array([0.0, sequence_length]),
         rate=np.array([recombination_rate]),
     )
 else:
     hapmap = msprime.RateMap.read_hapmap(hapmap_file)
+    if sequence_length is None:
+        sequence_length = int(hapmap.sequence_length)
+        assert sequence_length >= positions.max(), \
+            "Variant positions exceed sequence length of recombination map"
+    else:
+        assert hapmap.sequence_length == sequence_length, \
+            "Mismatch between recombination map and sequence length"
     logfile.write(f"{tag()} Read {hapmap.rate.size} recombination rates from {hapmap_file}\n")
 
 
@@ -127,10 +155,11 @@ datemask[omitted_positions - 1] = True
 meta_file = vcf_file.replace(".vcf.gz", ".meta.csv")
 if not os.path.exists(meta_file):
     logfile.write(f"{tag()} Did not find {meta_file}, inserting sample names into metadata\n")
-    metadata = [{"id":name} for name in vcf["samples"]]
+    metadata = [{"id":name} for name in samples]
     assert stratify is None, \
         f"'{meta_file}' not found, cannot stratify statistics or sample nodes " \
-        f"by column '{stratify}', set to None in configfile"
+        f"by column '{stratify}', set to null in configfile"
+    # FIXME: add stratify so we always have population in tree seq
 else:
     meta_file = csv.reader(open(meta_file, "r"))
     metadata = []
@@ -138,7 +167,7 @@ else:
     for row in meta_file:
         assert len(row) == len(metadata_names)
         metadata.append({k:v for k, v in zip(metadata_names, row)})
-    assert len(metadata) == vcf["samples"].size, "Must have a metadata row for each sample"
+    assert len(metadata) == samples.size, "Must have a metadata row for each sample"
     if stratify is not None:
         assert stratify in metadata_names, \
             f"Cannot stratify statistics or sample nodes by column " \
@@ -146,37 +175,55 @@ else:
 
 
 # convert to diploid VCF if necessary
-assert vcf['calldata/GT'].shape[2] == 2
-ploidy = 1 if np.all(vcf['calldata/GT'][..., 1] == -1) else 2
+assert calldata.shape[2] == 2
+ploidy = 1 if np.all(calldata[..., 1] == -1) else 2
 if ploidy == 1:
-    assert vcf['samples'].size % 2 == 0, "VCF is haploid with an odd number of samples: cannot diploidize"
     logfile.write(f"{tag()} VCF is haploid, converting to diploid for SINGER\n")
-    vcf['samples'] = np.array([f"{a}_{b}" for a, b in zip(vcf['samples'][::2], vcf['samples'][1::2])])
-    vcf['calldata/GT'] = vcf['calldata/GT'][..., 0].reshape(-1, vcf['samples'].size, 2)
-samples = vcf['samples']
-genotypes = allel.GenotypeArray(vcf['calldata/GT']) 
-positions = vcf['variants/POS']
-assert np.max(positions) <= hapmap.sequence_length, "VCF position exceeds hapmap length"
+    assert samples.size % 2 == 0, "VCF is haploid with an odd number of samples: cannot diploidize"
+    samples = np.array([f"{a}_{b}" for a, b in zip(samples[::2], samples[1::2])], dtype=StringDType)
+    calldata = calldata[..., 0].reshape(-1, samples.size, 2)
+
+
+# polarise alleles
+has_ancestral_state = np.logical_or(ref_allele == anc_allele, alt_allele == anc_allele)
+has_binary_state = calldata.max(axis=(-2, -1)) == 1
+polarised = np.logical_and.reduce([has_ancestral_state, has_binary_state, anc_allele != 'N', anc_allele != '-'])
+flip_alleles = np.logical_and(polarised, alt_allele == anc_allele)
+calldata[flip_alleles] = 1 - calldata[flip_alleles]
+ref_allele[flip_alleles], alt_allele[flip_alleles] = \
+    alt_allele[flip_alleles], ref_allele[flip_alleles]
+logfile.write(
+    f"{tag()} Found valid ancestral states for {polarised.sum()} variants. Flipped "
+    f"derived state for {flip_alleles.sum()} variants. The remaining {np.sum(~polarised)} "
+    f"variants will be treated as unpolarised.\n"
+)
 
 
 # filter variants
+genotypes = allel.GenotypeArray(calldata) 
+assert np.max(positions) <= hapmap.sequence_length, "VCF position exceeds hapmap length"
 counts = genotypes.count_alleles()
 filter_segregating = counts.is_segregating()
 logfile.write(f"{tag()} Removed {np.sum(~filter_segregating)} non-segregating sites\n")
-filter_biallelic = genotypes.max(axis=(-2, -1)) == 1
+filter_biallelic = has_binary_state
 logfile.write(f"{tag()} Removed {np.sum(~filter_biallelic)} non-biallelic sites\n")
 filter_nonmissing = counts.sum(axis=1) == 2 * samples.size
 logfile.write(f"{tag()} Removed {np.sum(~filter_nonmissing)} sites with missing data\n")
 filter_accessible = ~bitmask[positions - 1]
-logfile.write(f"{tag()} Removed {np.sum(~filter_accessible)} sites occuring in inaccessible intervals\n")
+logfile.write(f"{tag()} Removed {np.sum(~filter_accessible)} sites occuring in masked intervals\n")
 filter_unmasked = ~sitemask[positions - 1]
 logfile.write(f"{tag()} Removed {np.sum(~filter_unmasked)} sites explicitly marked as filtered SNPs\n")
+filter_polarised = np.full(positions.size, True)
+if snakemake.params.polarised and snakemake.params.remove_unpolarised:
+    filter_polarised[:] = polarised
+    logfile.write(f"{tag()} Removed {np.sum(~filter_polarised)} sites that could not be polarised\n")
 retain = np.logical_and.reduce([
     filter_segregating, 
     filter_biallelic, 
     filter_nonmissing, 
     filter_accessible,
     filter_unmasked,
+    filter_polarised,
 ])
 
 
@@ -204,7 +251,9 @@ assert np.all(~bitmask[filtered_positions - 1])
 assert np.sum(retain) > 0, "No variants left after filtering"
 logfile.write(f"{tag()} Calculating statistics with remaining {np.sum(retain)} variants\n")
 all_positions = positions.copy()
-genotypes, positions = genotypes[retain], positions[retain]
+genotypes, positions, polarised = genotypes[retain], positions[retain], polarised[retain]
+variant_id, variant_chrom = variant_id[retain], variant_chrom[retain]
+calldata, ref_allele, alt_allele = calldata[retain], ref_allele[retain], alt_allele[retain]
 
 
 # find inaccessible intervals greater than a certain size, and use these
@@ -272,7 +321,10 @@ num_filtered = np.bincount(  # accessible but filtered sites
     np.digitize(filtered_positions - 1, windows) - 1,
     minlength=windows.size - 1,
 )
-assert num_filtered.size == num_retained.size == windows.size - 1
+num_polarised = np.bincount(  # sites with ancestral state
+    np.digitize(positions[polarised], windows) - 1,
+    minlength=windows.size - 1,
+)
 logfile.write(f"{tag()} Counted {sum(num_retained)} retained and {sum(num_filtered)} filtered variants\n")
 
 
@@ -282,6 +334,7 @@ prop_segregating = num_retained / num_accessible
 prop_segregating[np.isnan(prop_segregating)] = 0.0
 prop_filtered = num_filtered / (num_retained + num_filtered)
 prop_filtered[np.isnan(prop_filtered)] = 1.0
+prop_unpolarised = (num_retained - num_polarised) / num_retained
 filter_min_size = num_bases >= min_chunk_size
 logfile.write(
     f"{tag()} Skipping {np.sum(~filter_min_size)} chunks smaller than "
@@ -307,6 +360,7 @@ logfile.write(
     f"{tag()} Skipping {np.sum(~filter_recombinant)} chunks with zero "
     f"recombination rate\n"
 )
+# TODO: filter on proportion unpolarised?
 filter_chunks = np.logical_and.reduce([
     filter_min_size,
     filter_inaccessible,
@@ -322,7 +376,7 @@ logfile.write(
 
 # plot site density and recombination rate as sanity check,
 # filtered chunks are highlighted with red
-fig, axs = plt.subplots(4, 1, figsize=(8, 9), sharex=True)
+fig, axs = plt.subplots(5, 1, figsize=(8, 11), sharex=True)
 col = ['black' if x else 'red' for x in filter_chunks]
 for l, r in zip(windows[:-1][~filter_chunks], windows[1:][~filter_chunks]):
     for ax in axs: 
@@ -334,9 +388,11 @@ axs[1].step(windows[:-1], prop_segregating, where="post", color="black")
 axs[1].set_ylabel("Proportion variant bases")
 axs[2].step(windows[:-1], prop_filtered, where="post", color="black")
 axs[2].set_ylabel("Proportion filtered variants")
-axs[3].step(windows[:-1], rec_rate, where="post", color="black")
-axs[3].set_ylabel("Mean recombination rate")
-axs[3].set_yscale("log")
+axs[3].step(windows[:-1], prop_unpolarised, where="post", color="black")
+axs[3].set_ylabel("Proportion unpolarised variants")
+axs[4].step(windows[:-1], rec_rate, where="post", color="black")
+axs[4].set_ylabel("Mean recombination rate")
+axs[4].set_yscale("log")
 fig.supxlabel("Position")
 fig.tight_layout()
 plt.savefig(snakemake.output.site_density)
@@ -507,13 +563,14 @@ for i in np.flatnonzero(filter_chunks):
         # "r": float(0.0),  # off map usage if at least one is positive
         # "mut_map": str(mutation_map_path),
         # "recomb_map": str(recombination_map_path),
-        # see comment above
+        # (see comment above)
         "m": float(mut.mean_rate),
         "r": float(rec.mean_rate),
         "input": str(vcf_prefix), 
         "start": int(start), 
         "end": int(end), 
         "polar": float(polar),
+        "polar_map": str(snakemake.output.polarisation),
         "seed": int(seeds[i, 0]),
         "output": str(chunk_path),
     }
@@ -539,50 +596,46 @@ for i in np.flatnonzero(filter_chunks):
 
 
 # if unpolarised, randomly flip reference and alternate
-# TODO: ultimately take in an ancestral fasta and flip sites with ambiguous ancestral state
-if not snakemake.params.polarised and snakemake.params.random_polarisation:
-    flip_alleles = np.flatnonzero(rng.binomial(1, 0.5, size=retain.size))
+if snakemake.params.random_polarisation:
+    flip_alleles = np.full(polarised.size, False)
+    flip_alleles[~polarised] = rng.binomial(1, 0.5, size=np.sum(~polarised))
     logfile.write(
-        f"{tag()} Randomly choosing reference/alternate for all variants "
-        f"to ensure half are mispolarised in input\n"
+        f"{tag()} For random initialization of {np.sum(~polarised)} unpolarised "
+        f"variants, swapping reference/alternate for {flip_alleles.sum()} sites\n"
     )
-    vcf['variants/REF'][flip_alleles], vcf['variants/ALT'][flip_alleles, 0] = \
-        vcf['variants/ALT'][flip_alleles, 0], vcf['variants/REF'][flip_alleles]
-    vcf['calldata/GT'][flip_alleles] = 1 - vcf['calldata/GT'][flip_alleles]
+    ref_allele[flip_alleles], alt_allele[flip_alleles] = \
+        alt_allele[flip_alleles], ref_allele[flip_alleles]
+    calldata[flip_alleles] = 1 - calldata[flip_alleles]
 
 
-# dump filtered vcf
+# write out polarisation probabilities
+if snakemake.params.polarised:
+    polarisation = np.stack([positions[~polarised], np.full(np.sum(~polarised), 0.5)], axis=-1)
+else:
+    polarisation = np.stack([positions[polarised], np.full(np.sum(polarised), 0.99)], axis=-1)
+np.savetxt(snakemake.output.polarisation, polarisation)
+
+
+# write out filtered vcf
 write_minimal_vcf(
     open(snakemake.output.vcf, "w"),
-    vcf['samples'],
-    vcf['variants/CHROM'][retain],
-    vcf['variants/POS'][retain],
-    vcf['variants/ID'][retain],
-    vcf['variants/REF'][retain],
-    vcf['variants/ALT'][retain, 0],
-    vcf['calldata/GT'][retain],
+    samples, variant_chrom, positions, variant_id,
+    ref_allele, alt_allele, calldata,
 )
 
 
-# dump reference and alternate allele per position
+# write out reference and alternate allele per position
 pickle.dump(
-    {
-        pos: (ref, alt) for pos, ref, alt in 
-        zip(
-            vcf['variants/POS'][retain], 
-            vcf['variants/REF'][retain], 
-            vcf['variants/ALT'][retain, 0],
-        )
-    },
+    {pos: (ref, alt) for pos, ref, alt in zip(positions, ref_allele, alt_allele)},
     open(snakemake.output.alleles, "wb"),
 )
 
 
-# dump individual metadata
+# write out individual metadata
 pickle.dump(metadata, open(snakemake.output.metadata, "wb"))
 
 
-# dump statistics
+# write out windowed statistics
 diversity[~filter_windows] = np.nan
 tajima_d[~filter_windows] = np.nan
 vcf_stats = {

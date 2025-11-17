@@ -6,6 +6,7 @@ Part of https://github.com/nspope/singer-snakemake.
 
 import numpy as np
 import msprime
+import typing
 import tskit
 
 
@@ -33,14 +34,46 @@ def ratemap_to_text(ratemap: msprime.RateMap, *, replace_nan_with: float = 0.0) 
     """
     text = []
     for left, right, rate in zip(
-        ratemap.position[:-1],  # FIXME: use ratemap.left/right
-        ratemap.position[1:], 
+        ratemap.left,
+        ratemap.right,
         ratemap.rate,
     ):
         if np.isnan(rate): rate = replace_nan_with
         text.append(f"{int(left)} {int(right)} {rate:.16f}") # FIXME: precision FIXME: no int
     text = "\n".join(text) + "\n"
     return text 
+
+
+def read_single_fasta(handle: typing.IO) -> None:
+    """
+    Read a single-contig fasta
+    """
+    sequence = handle.read().strip().split("\n")
+    headers = np.char.startswith(sequence, ">")
+    assert len(headers) and headers[0] and np.all(~headers[1:]), "Fasta must contain a single sequence"
+    sequence = "".join(sequence[1:])
+    return np.fromiter(sequence, dtype="<U1")
+
+
+def write_minimal_vcf(handle, sample_names, CHROM, POS, ID, REF, ALT, GT): 
+    """
+    Write a minimal biallelic diploid VCF
+    """
+    assert CHROM.size == POS.size == ID.size == REF.size
+    assert ALT.ndim == 1 and ALT.size == CHROM.size
+    assert GT.shape[0] == CHROM.size and GT.shape[1] == sample_names.size and GT.shape[2] == 2
+    assert np.all(np.diff(POS) > 0), "Positions non-increasing in VCF"
+    handle.write("##fileformat=VCFv4.2\n")
+    handle.write("##source=\"singer-snakemake::chunk_chromosomes\"\n")
+    handle.write("##FILTER=<ID=PASS,Description=\"All filters passed\">\n")
+    handle.write("##FORMAT=<ID=GT,Number=1,Type=String,Description=\"Genotype\">\n")
+    handle.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT")
+    for sample in sample_names: handle.write(f"\t{sample}")
+    handle.write("\n")
+    for chrom, pos, id, ref, alt, gt in zip(CHROM, POS, ID, REF, ALT, GT):
+        handle.write(f"{chrom}\t{pos}\t{id}\t{ref}\t{alt}\t.\tPASS\t.\tGT")
+        for (a, b) in gt: handle.write(f"\t{a}|{b}")
+        handle.write("\n")
 
 
 def absorb_mutations_above_root(

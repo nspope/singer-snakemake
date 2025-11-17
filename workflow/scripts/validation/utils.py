@@ -61,6 +61,17 @@ def simulate_variant_mask(
     return bitmask
 
 
+def extract_ancestral_sequence(
+    ts: tskit.TreeSequence,
+) -> np.ndarray:
+    sequence_length = int(ts.sequence_length)
+    positions = ts.sites_position.astype(np.int64)
+    sequence = np.full(sequence_length, "N")
+    ancestral_state, _ = ancestral_state_and_frequency(ts)
+    sequence[positions] = ancestral_state
+    return sequence
+
+
 def ratemap_to_hapmap(
     ratemap: msprime.RateMap, 
     contig_name: str, 
