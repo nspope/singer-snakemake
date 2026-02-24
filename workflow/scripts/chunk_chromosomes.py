@@ -485,8 +485,10 @@ pickle.dump(omitted_positions, open(snakemake.output.omitted, "wb"))
 # meantime, we explicitly use mean rates.
 
 # dump SINGER parameters for each chunk
-chunks_dir = snakemake.params.chunks_dir
-os.makedirs(chunks_dir, exist_ok=True)
+# chunks_dir = snakemake.params.chunks_dir
+# os.makedirs(chunks_dir, exist_ok=True)
+chunks_dir = snakemake.output.chunks_dir
+os.makedirs(f"{chunks_dir}")
 seeds = rng.integers(0, 2 ** 10, size=(filter_chunks.size, 2))
 vcf_prefix = snakemake.output.vcf.removesuffix(".vcf")
 for i in np.flatnonzero(filter_chunks):
