@@ -129,13 +129,13 @@ checkpoint chunk_chromosomes:
         metadata = os.path.join(CHROM_PATH, "{chrom}.vcf.samples.p"),
         chunks = os.path.join(CHROM_PATH, "{chrom}.chunks.p"),
         windows = os.path.join(CHROM_PATH, "{chrom}.windows.p"),
+        chunks_dir = directory(CHUNK_PATH),
         alleles = os.path.join(CHROM_PATH, "{chrom}.alleles.p"),
         site_density = os.path.join(PLOTS_PATH, "site-density.png"), 
     log:
         log = os.path.join(CHROM_PATH, "{chrom}.log"),
     params:
-        seed = lambda w: SEED_ARRAY[w.chrom],
-        chunks_dir = lambda w: CHUNK_PATH.format(chrom=w.chrom),
+        seed = lambda w: SEED_ARRAY[w.chrom], #         chunks_dir = lambda w: CHUNK_PATH.format(chrom=w.chrom),
         max_chunk_size = MAX_CHUNK_SIZE,
         min_chunk_size = MIN_CHUNK_SIZE,
         max_missing = MAX_MISSING,
