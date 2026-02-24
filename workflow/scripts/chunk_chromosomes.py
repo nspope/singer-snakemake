@@ -151,29 +151,6 @@ ploidy = 1 if np.all(vcf['calldata/GT'][..., 1] == -1) else 2
 if ploidy == 1:
     assert vcf['samples'].size % 2 == 0, "VCF is haploid with an odd number of samples: cannot diploidize"
     logfile.write(f"{tag()} VCF is haploid, converting to diploid for SINGER\n")
-    collapsed_metadata = []
-    for md_a, md_b in zip(metadata[::2], metadata[1::2]):
-        merged = {}
-        for key in md_a.keys():
-            a = md_a[key]
-            b = md_b[key]
-            if a == b:
-                merged[key] = a
-            elif key == "id":
-                merged[key] = f"{a}_{b}"
-            else:
-                if stratify is not None and key == stratify:
-                    raise ValueError(
-                        "Cannot diploidize metadata: paired haploid samples have different "
-                        f"'{stratify}' values ({a!r} vs {b!r})"
-                    )
-                raise ValueError(
-                    "Cannot diploidize metadata: paired haploid samples have different "
-                    f"'{key}' values ({a!r} vs {b!r})"
-                )
-        collapsed_metadata.append(merged)
-    metadata = collapsed_metadata
-    logfile.write(f"{tag()} Collapsed metadata from {2 * len(metadata)} haploid rows to {len(metadata)} diploid rows\n")
     vcf['samples'] = np.array([f"{a}_{b}" for a, b in zip(vcf['samples'][::2], vcf['samples'][1::2])])
     vcf['calldata/GT'] = vcf['calldata/GT'][..., 0].reshape(-1, vcf['samples'].size, 2)
 samples = vcf['samples']
