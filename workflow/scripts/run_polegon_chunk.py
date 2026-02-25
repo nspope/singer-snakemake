@@ -12,6 +12,7 @@ import numpy as np
 import msprime
 import tszip
 import tskit
+import pickle
 from datetime import datetime
 
 # --- lib --- #
