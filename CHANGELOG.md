@@ -1,7 +1,11 @@
-# [0.1.1]
+# [0.1.2]
+
+- Use ancestral states if provided as fasta; ambiguous ancestral states are treated as unpolarised
+- Include a custom version of SINGER binary that allows per-site polarisation
+
+# 3-Mar-26 [0.1.1]
 
 - Use discretization scheme that delineates chunks between large "gaps" of masked sequence
-- Use fine-scale recombination and mutation rate maps in SINGER
 - Use POLEGON to date chunks accounting for masked sequence / missing data via branch spans
 - Use branch midpoints as mutation times in tree sequence
 - Absorb mutations above the root in inferred trees, switching ancestral state accordingly
