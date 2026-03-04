@@ -192,6 +192,7 @@ rule run_singer:
     params:
         mcmc_resumes = SINGER_MCMC_RESUMES,
         singer_binary = SINGER_BINARY,
+        skip_failures = config.get("singer-skip-failures", True),
     script:
         "scripts/run_singer.py"
 
@@ -218,7 +219,7 @@ rule run_polegon:
     log:
         log = os.path.join(CHUNK_PATH, "{id}.{rep}.log"),
     script:
-        "scripts/run_polegon_chunk.py"
+        "scripts/run_polegon.py"
 
 
 def merge_chunks_params(wildcards):
@@ -267,6 +268,7 @@ rule merge_chunks:
         repolarise = config.get("repolarise-ancestral-state", True),
         delete_genealogical_gaps = config.get("delete-genealogical-gaps", True),
         delete_masked_intervals = config.get("delete-masked-intervals", False),
+        record_chunk_provenance = config.get("record-chunk-provenance", True),
     script:
         "scripts/merge_chunks.py"
         

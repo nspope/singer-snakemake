@@ -37,8 +37,16 @@ with open(snakemake.log.log, "w") as log:
                 handle.close()
                 args.append("-resume")
         log.write(f"{tag()} " + " ".join(invocation + args) + "\n")
+        log.flush()
         process = subprocess.run(invocation + args, check=False, stdout=log, stderr=log)
         if process.returncode == 0: 
             break
-    log.write(f"{tag()} SINGER run ended ({process.returncode})\n")
-assert process.returncode == 0, f"SINGER terminated with error ({process.returncode})"
+    log.write(f"{tag()} SINGER run ended (return code: {process.returncode})\n")
+
+if snakemake.params.skip_failures:
+    if not process.returncode == 0:
+        log.write(f"{tag()} SINGER terminated with error, writing blank output for chunk\n")
+        for outputs in zip(*snakemake.output):
+            for f in outputs: open(f, "w")
+else:
+    assert process.returncode == 0, f"SINGER terminated with error ({process.returncode})"
