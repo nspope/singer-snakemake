@@ -107,13 +107,14 @@ for i, (params_file, recomb_file, node_file, mutation_file, branch_file) in enum
         # FIXME: use dicts not lists
         singer_parameters.append(params['singer'])
         polegon_parameters.append(params['polegon'])
+
     logfile.write(f"{tag()} Converting chunk {i} with params: {params}\n")
+    if os.path.get_size(node_file) == 0:
+        logfile.write(f"{tag()} SINGER output is empty, treating chunk as missing\n")
+        continue
 
     # nodes
     node_time = np.loadtxt(node_file)
-    if node_time.size == 0:
-        logfile.write(f"{tag()} SINGER output is empty, treating chunk as missing\n")
-        continue
     num_nodes = tables.nodes.num_rows - num_samples
     if tables.individuals.num_rows == 0:
         population = []

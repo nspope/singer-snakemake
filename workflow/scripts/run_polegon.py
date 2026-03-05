@@ -27,7 +27,7 @@ logfile = open(snakemake.log.log, "w")
 use_polegon = snakemake.params.use_polegon
 use_mutational_span = snakemake.params.use_mutational_span
 drop_omitted = snakemake.params.drop_omitted
-failed_chunk = np.loadtxt(snakemake.input.nodes).size == 0
+failed_chunk = os.path.get_size(snakemake.input.nodes) == 0
 
 if use_polegon and not failed_chunk:
     singer_params = yaml.safe_load(open(snakemake.input.params)).pop("singer")
