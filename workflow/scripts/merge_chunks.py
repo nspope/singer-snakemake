@@ -109,7 +109,7 @@ for i, (params_file, recomb_file, node_file, mutation_file, branch_file) in enum
         polegon_parameters.append(params['polegon'])
 
     logfile.write(f"{tag()} Converting chunk {i} with params: {params}\n")
-    if os.path.get_size(node_file) == 0:
+    if os.path.getsize(node_file) == 0:
         logfile.write(f"{tag()} SINGER output is empty, treating chunk as missing\n")
         continue
 
