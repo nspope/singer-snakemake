@@ -168,6 +168,7 @@ rule run_singer:
     Run SINGER chunk-by-chunk.
     """
     input:
+        vcf = rules.chunk_chromosomes.output.vcf,  # not used, mark dependency
         params = os.path.join(CHUNK_PATH, "{id}.yaml"),
     output:  
         # TODO: mark temp
