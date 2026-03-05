@@ -7,7 +7,7 @@ mask-variants: 0.0  # randomly mask this proportion of variants
 inaccessible-bed: "experiments/filtering/skip_failures.bed"  # path to bedfile with masked intervals (will be combined with simulated intervals, can be omitted)
 prop-mispolarise: 0.0  # randomly mispolarise this proportion of biallelic variants (or "ref", "maf", "frq")
 time-grid: [1, 6, 60]  # [log10 start, log10 stop, number of intervals] for plots
-project-afs-to: null  # project AFS to this number of haploids per population for plots
+project-afs-to: 4  # project AFS to this number of haploids per population for plots
 singer-snakemake-config: "config/example_config.yaml"  # path to singer-snakemake config to use (mutation/recombination rates ignored)
 singer-snakemake-config-override:  # override these key-values from `singer-snakemake-config`
     polarised: True
