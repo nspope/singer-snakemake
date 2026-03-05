@@ -191,7 +191,7 @@ def find_genealogical_gaps(
     return intervals
 
 
-def ratemap_product(ratemap: msprime.RateMap, other: msprime.RateMap) -> msprime.RateMap:
+def multiply_ratemaps(ratemap: msprime.RateMap, other: msprime.RateMap) -> msprime.RateMap:
     """
     Create a new set of intervals from the intersection of two ratemaps, and then take the 
     product of the rates in each interval.
@@ -204,12 +204,12 @@ def ratemap_product(ratemap: msprime.RateMap, other: msprime.RateMap) -> msprime
     return new_ratemap
 
 
-def extract_accessible(ts: tskit.TreeSequence) -> msprime.RateMap:
+def extract_accessible_ratemap(ts: tskit.TreeSequence) -> msprime.RateMap:
     """
     Return a ratemap where the rate is zero over masked segments in the tree
     sequence, and one otherwise.
     """
-    breakpoints = ts.breakpoints(asarray=True)
+    breakpoints = ts.breakpoints(as_array=True)
     accessible = np.array([t.num_edges > 0 for t in ts.trees()])
     new_breakpoints, new_accessible = compactify_run_length_encoding(breakpoints, accessible)
     ratemap = msprime.RateMap(position=new_breakpoints, rate=new_accessible)
