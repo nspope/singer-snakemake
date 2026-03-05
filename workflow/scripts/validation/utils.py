@@ -153,7 +153,7 @@ def assert_valid_bedmask(bitmask: np.ndarray, bedmask_path: str):
     Check that bed file matches bitmask.
     """
     bitmask_check = np.full_like(bitmask, False)
-    bedmask = np.loadtxt(bedmask_path, usecols=[1, 2], dtype=int)
+    bedmask = np.loadtxt(bedmask_path, usecols=[1, 2], dtype=int, ndmin=2)
     for a, b in bedmask: bitmask_check[a:b] = True
     assert np.all(~np.logical_xor(bitmask, bitmask_check))
 
@@ -163,7 +163,7 @@ def bed_to_bitmask(bedmask_path: str, bitmask: np.ndarray):
     Apply bed to bitmask (modified in place).
     """
     if bedmask_path is None: return
-    bedmask = np.loadtxt(bedmask_path, usecols=[1, 2]) 
+    bedmask = np.loadtxt(bedmask_path, usecols=[1, 2], ndmin=2) 
     for (a, b) in bedmask.astype(np.int64): bitmask[a:b] = True
 
 

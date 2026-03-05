@@ -91,6 +91,9 @@ TRUE_PAIR_RAT_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.true_pair_rat.npy"
 MISPOLARISED_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.mispolarised.npy"
 PLOT_PATH = f"{OUTPUT_DIR}/plots"
 
+# log files
+SIMULATION_LOG = f"{INPUT_DIR}/{{chrom}}.log"
+
 
 # --- rules --- #
 
@@ -127,6 +130,8 @@ rule simulate_arg:
         # FIXME: hidden for now
         record_structural_variants = config.get("record-structural-variants", False),
         mask_ancestral = config.get("mask-ancestral", (0.0, 0))
+    log:
+        logfile = SIMULATION_LOG,
     script: SIMULATION_SCRIPT
 
 

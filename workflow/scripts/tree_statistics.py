@@ -16,6 +16,8 @@ from collections import defaultdict
 from datetime import datetime
 
 from utils import mutational_load
+from utils import ratemap_product
+from utils import extract_accessible
 
 
 # --- lib --- #
@@ -37,6 +39,7 @@ accessible = msprime.RateMap(
     position=inaccessible.position,
     rate=1 - inaccessible.rate,
 )
+accessible = ratemap_product(accessible, extract_accessible(trees))
 accessible_bp = np.diff(accessible.get_cumulative_mass(windows.position))
 
 # remove sites that were omitted from dating
