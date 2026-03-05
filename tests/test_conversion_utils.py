@@ -7,7 +7,8 @@ import msprime
 import pytest
 from workflow.scripts.utils import bitmask_to_arrays
 from workflow.scripts.utils import ratemap_to_text
-from workflow.scripts.utils import ratemap_product
+from workflow.scripts.utils import multiply_ratemaps
+from workflow.scripts.utils import extract_accessible_ratemap
 from workflow.scripts.utils import compactify_run_length_encoding
 
 
@@ -34,7 +35,7 @@ def test_ratemap_to_text():
     assert ratemap_to_text(ratemap) == text_ck
 
 
-def test_ratemap_product():
+def test_multiply_ratemaps():
     rng = np.random.default_rng(10)
     grid = np.linspace(0, 1, 1000)[:-1]
     n, m = 40, 20
@@ -44,7 +45,7 @@ def test_ratemap_product():
     other_position = np.unique(np.concatenate([[0, 1], rng.uniform(size=m - 2)]))
     other_rate = rng.uniform(size=m - 1)
     other = msprime.RateMap(position=other_position, rate=other_rate)
-    ratemap_prod = ratemap_product(ratemap, other)
+    ratemap_prod = multiply_ratemaps(ratemap, other)
     np.testing.assert_allclose(
         ratemap_prod.get_rate(grid), 
         ratemap.get_rate(grid) * other.get_rate(grid),
@@ -58,7 +59,7 @@ def test_ratemap_square():
     position = np.unique(np.concatenate([[0, 1], rng.uniform(size=n - 2)]))
     rate = rng.uniform(size=n - 1)
     ratemap = msprime.RateMap(position=position, rate=rate)
-    ratemap_sq = ratemap_product(ratemap, ratemap)
+    ratemap_sq = multiply_ratemaps(ratemap, ratemap)
     np.testing.assert_allclose(ratemap_sq.get_rate(grid), ratemap.get_rate(grid) ** 2)
 
 
@@ -73,7 +74,7 @@ def test_ratemap_nan():
         position=np.linspace(0, 1, 5),
         rate=np.array([np.nan, np.nan, 1.0, np.nan])
     )
-    ratemap_prod = ratemap_product(ratemap, other)
+    ratemap_prod = multiply_ratemaps(ratemap, other)
     np.testing.assert_allclose(
         ratemap_prod.get_rate(grid), 
         ratemap.get_rate(grid) * other.get_rate(grid),
@@ -89,7 +90,7 @@ def test_compactify_run_length_encoding():
     other_position = np.unique(np.concatenate([[0, 1], rng.uniform(size=m - 2)]))
     other_rate = rng.uniform(size=m - 1) > 0.5
     other = msprime.RateMap(position=other_position, rate=other_rate)
-    ratemap_prod = ratemap_product(ratemap, other)
+    ratemap_prod = multiply_ratemaps(ratemap, other)
     breaks, values = ratemap_prod.position, ratemap_prod.rate
     breaks_ck = [breaks[0]]
     values_ck = [values[0]]
@@ -104,3 +105,14 @@ def test_compactify_run_length_encoding():
     breaks, values = compactify_run_length_encoding(breaks, values)
     np.testing.assert_allclose(breaks, breaks_ck)
     np.testing.assert_allclose(values, values_ck)
+
+
+def test_extract_accessible_ratemap():
+    ts = msprime.sim_ancestry(10, sequence_length=10)
+    intervals = np.array([0.0, 1.2, 6.5, 8.5, 10.0])
+    accessible = np.array([True, False, True, False])
+    left, right = intervals[:-1], intervals[1:]
+    ts = ts.keep_intervals(np.stack([left, right], axis=-1)[accessible])
+    ratemap = extract_accessible_ratemap(ts)
+    np.testing.assert_allclose(ratemap.position, intervals)
+    np.testing.assert_allclose(ratemap.rate, accessible.astype(float))
