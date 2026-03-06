@@ -129,7 +129,8 @@ rule simulate_arg:
         config = SIMULATION_CONFIG,
         # FIXME: hidden for now
         record_structural_variants = config.get("record-structural-variants", False),
-        mask_ancestral = config.get("mask-ancestral", (0.0, 0))
+        mask_ancestral = config.get("mask-ancestral", (0.0, 0)),
+        skip_ancestral_sequence = config.get("skip-ancestral-sequence", False),
     log:
         logfile = SIMULATION_LOG,
     script: SIMULATION_SCRIPT

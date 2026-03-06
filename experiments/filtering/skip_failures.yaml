@@ -21,3 +21,4 @@ msprime-config:  # simulation settings
     recombination-map: "example/example.hapmap"  # path to hapmap-format recombination map
     mutation-rate: 1.0e-8  # per base mutation rate
     ploidy: 2  # sample ploidy
+skip-ancestral-sequence: True
