@@ -130,7 +130,13 @@ rule simulate_arg:
         # FIXME: hidden for now
         record_structural_variants = config.get("record-structural-variants", False),
         mask_ancestral = config.get("mask-ancestral", (0.0, 0)),
-        skip_ancestral_sequence = config.get("skip-ancestral-sequence", False),
+        # for debugging:
+        skip_mask = config.get("skip-mask", False),
+        skip_filtered = config.get("skip-filtered", False),
+        skip_omitted = config.get("skip-omitted", False),
+        skip_hapmap = config.get("skip-hapmap", False),
+        skip_metadata = config.get("skip-metadata", False),
+        skip_ancestral = config.get("skip-ancestral", False),
     log:
         logfile = SIMULATION_LOG,
     script: SIMULATION_SCRIPT

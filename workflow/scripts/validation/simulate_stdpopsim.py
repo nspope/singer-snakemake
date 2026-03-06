@@ -111,43 +111,49 @@ repolarise = simulate_mispolarisation(ts, mispolarised_prop, subseed[5])
 logging.info(f"Simulated repolarisation of {repolarise.sum()} sites")
 
 # write out sequence mask as bed
-bedmask = open(f"{prefix}.mask.bed", "w")
-bedmask.write(bitmask_to_bed(sequence_mask, contig_name))
-bedmask.close()
-assert_valid_bedmask(sequence_mask, f"{prefix}.mask.bed")
-logging.info(f"Wrote sequence mask to {prefix}.mask.bed")
+if not snakemake.params.skip_mask:
+    bedmask = open(f"{prefix}.mask.bed", "w")
+    bedmask.write(bitmask_to_bed(sequence_mask, contig_name))
+    bedmask.close()
+    assert_valid_bedmask(sequence_mask, f"{prefix}.mask.bed")
+    logging.info(f"Wrote sequence mask to {prefix}.mask.bed")
 
 # write out variants to omit from dating as one-based positions
-omitted = open(f"{prefix}.omit.txt", "w")
-omitted.write("\n".join([str(x + 1) for x in site_position[sv_mask]]) + "\n")
-omitted.close()
-logging.info(f"Wrote list of omitted sites to {prefix}.omit.txt")
+if not snakemake.params.skip_omitted:
+    omitted = open(f"{prefix}.omit.txt", "w")
+    omitted.write("\n".join([str(x + 1) for x in site_position[sv_mask]]) + "\n")
+    omitted.close()
+    logging.info(f"Wrote list of omitted sites to {prefix}.omit.txt")
 
 # write out variant mask as one-based positions
-sitemask = open(f"{prefix}.filter.txt", "w")
-sitemask.write("\n".join([str(x + 1) for x in site_position[variant_mask]]) + "\n")
-sitemask.close()
-logging.info(f"Wrote list of filtered sites to {prefix}.filter.txt")
+if not snakemake.params.skip_filtered:
+    sitemask = open(f"{prefix}.filter.txt", "w")
+    sitemask.write("\n".join([str(x + 1) for x in site_position[variant_mask]]) + "\n")
+    sitemask.close()
+    logging.info(f"Wrote list of filtered sites to {prefix}.filter.txt")
 
 # write out hapmap
-hapmap = open(f"{prefix}.hapmap", "w")
-hapmap.write(ratemap_to_hapmap(contig.recombination_map, contig_name, missing_as_zero=True))
-hapmap.close()
-assert_valid_hapmap(contig.recombination_map, f"{prefix}.hapmap", ignore_missing=True)
-logging.info(f"Wrote hapmap to {prefix}.hapmap")
+if not snakemake.params.skip_hapmap:
+    hapmap = open(f"{prefix}.hapmap", "w")
+    hapmap.write(ratemap_to_hapmap(contig.recombination_map, contig_name, missing_as_zero=True))
+    hapmap.close()
+    assert_valid_hapmap(contig.recombination_map, f"{prefix}.hapmap", ignore_missing=True)
+    logging.info(f"Wrote hapmap to {prefix}.hapmap")
 
 # write out metadata as csv
-metadata_csv, individual_names = population_metadata_csv(ts)
-metadata = open(f"{prefix}.meta.csv", "w")
-metadata.write(metadata_csv)
-metadata.close()
-logging.info(f"Wrote metadata to {prefix}.meta.csv")
+if not snakemake.params.skip_metadata:
+    metadata_csv, individual_names = population_metadata_csv(ts)
+    metadata = open(f"{prefix}.meta.csv", "w")
+    metadata.write(metadata_csv)
+    metadata.close()
+    logging.info(f"Wrote metadata to {prefix}.meta.csv")
 
 # write out ancestral sequence
-ancestral = gzip.open(f"{prefix}.ancestral.fa.gz", "wt")
-ancestral.write(f">{contig_name}\n" + "".join(ancestral_sequence))
-ancestral.close()
-logging.info(f"Wrote ancestral states to {prefix}.ancestral.fa.gz")
+if not snakemake.params.skip_ancestral:
+    ancestral = gzip.open(f"{prefix}.ancestral.fa.gz", "wt")
+    ancestral.write(f">{contig_name}\n" + "".join(ancestral_sequence))
+    ancestral.close()
+    logging.info(f"Wrote ancestral states to {prefix}.ancestral.fa.gz")
 
 # write out trees
 tszip.compress(ts, snakemake.output.trees)

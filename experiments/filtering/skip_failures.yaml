@@ -10,7 +10,7 @@ time-grid: [1, 6, 60]  # [log10 start, log10 stop, number of intervals] for plot
 project-afs-to: 4  # project AFS to this number of haploids per population for plots
 singer-snakemake-config: "config/example_config.yaml"  # path to singer-snakemake config to use (mutation/recombination rates ignored)
 singer-snakemake-config-override:  # override these key-values from `singer-snakemake-config`
-    polarised: True
+    polarised: False
     max-missing: 1.0
     min-sites: 0
     min-gap-size: 0.0
@@ -21,4 +21,3 @@ msprime-config:  # simulation settings
     recombination-map: "example/example.hapmap"  # path to hapmap-format recombination map
     mutation-rate: 1.0e-8  # per base mutation rate
     ploidy: 2  # sample ploidy
-skip-ancestral-sequence: True
