@@ -59,7 +59,8 @@ if not os.path.exists(ancfa_file):
         f"{tag()} Did not find {ancfa_file}, treating variants as all "
         f"{'polarised' if snakemake.params.polarised else 'unpolarised'}\n"
     )
-    anc_allele = ref_allele.copy()
+    anc_allele = ref_allele.copy() if snakemake.params.polarised \
+        else np.full_like(ref_allele, "N")
 else:
     ancfa = read_single_fasta(gzip.open(ancfa_file, "rt"))
     if sequence_length is None:
