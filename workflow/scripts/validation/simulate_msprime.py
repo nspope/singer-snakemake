@@ -147,10 +147,11 @@ metadata.close()
 logging.info(f"Wrote metadata to {prefix}.meta.csv")
 
 # write out ancestral sequence
-ancestral = gzip.open(f"{prefix}.ancestral.fa.gz", "wt")
-ancestral.write(f">{contig_name}\n" + "".join(ancestral_sequence))
-ancestral.close()
-logging.info(f"Wrote ancestral states to {prefix}.ancestral.fa.gz")
+if not snakemake.params.skip_ancestral_sequence:
+    ancestral = gzip.open(f"{prefix}.ancestral.fa.gz", "wt")
+    ancestral.write(f">{contig_name}\n" + "".join(ancestral_sequence))
+    ancestral.close()
+    logging.info(f"Wrote ancestral states to {prefix}.ancestral.fa.gz")
 
 # write out trees
 tszip.compress(ts, snakemake.output.trees)
