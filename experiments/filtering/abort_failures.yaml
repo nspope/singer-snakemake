@@ -1,0 +1,23 @@
+# abort pipeline if there are MCMC chunks that fail (here because of zero sites)
+output-dir: "ablation-abort-failures"  # where to place validation results and simulations
+random-seed: 1024  # global random seed
+num-replicates: 1  # number of replicate ARGs to simulate
+mask-sequence: [0.0, 0]  # randomly mask intervals with this [density, mean length]
+mask-variants: 0.0  # randomly mask this proportion of variants
+inaccessible-bed: "experiments/filtering/skip_failures.bed"  # path to bedfile with masked intervals (will be combined with simulated intervals, can be omitted)
+prop-mispolarise: 0.0  # randomly mispolarise this proportion of biallelic variants (or "ref", "maf", "frq")
+time-grid: [1, 6, 60]  # [log10 start, log10 stop, number of intervals] for plots
+project-afs-to: null  # project AFS to this number of haploids per population for plots
+singer-snakemake-config: "config/example_config.yaml"  # path to singer-snakemake config to use (mutation/recombination rates ignored)
+singer-snakemake-config-override:  # override these key-values from `singer-snakemake-config`
+    polarised: True
+    max-missing: 1.0
+    min-sites: 0
+    min-gap-size: 0.0
+    singer-skip-failures: False
+msprime-config:  # simulation settings
+    demographic-model: "example/example.demes.yaml"  # path to demes-formatted model
+    samples: {"pop_0": 10, "pop_1": 10, "pop_2": 10}  # sampled individuals per population
+    recombination-map: "example/example.hapmap"  # path to hapmap-format recombination map
+    mutation-rate: 1.0e-8  # per base mutation rate
+    ploidy: 2  # sample ploidy
