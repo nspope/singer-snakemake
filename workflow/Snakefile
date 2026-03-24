@@ -118,7 +118,7 @@ checkpoint chunk_chromosomes:
     input: 
         vcf = os.path.join(INPUT_DIR, "{chrom}.vcf.gz"),
     output:
-        chunks_dir = directory(CHUNK_PATH),
+        chunks_check = touch(os.path.join(CHROM_PATH, "chunks.done")),
         # TODO: mark VCF temp, but need to include as input to SINGER to make persistant
         vcf = os.path.join(CHROM_PATH, "{chrom}.vcf"),
         vcf_stats = os.path.join(CHROM_PATH, "{chrom}.vcf.stats.p"),
@@ -159,6 +159,7 @@ checkpoint chunk_chromosomes:
         model_masked_sequence = config.get("model-masked-sequence", True),
         random_polarisation = config.get("random-polarisation", True),
         remove_unpolarised = config.get("remove-unpolarised", False),
+        chunks_dir = CHUNK_PATH
     script:
         "scripts/chunk_chromosomes.py"
 
@@ -168,7 +169,8 @@ rule run_singer:
     Run SINGER chunk-by-chunk.
     """
     input:
-        vcf = rules.chunk_chromosomes.output.vcf,  # not used, mark dependency
+        vcf = rules.chunk_chromosomes.output.vcf,  # not used, mark dependency,
+        chunks_check = rules.chunk_chromosomes.output.chunks_check, # not used, mark dependency,
         params = os.path.join(CHUNK_PATH, "{id}.yaml"),
     output:  
         # TODO: mark temp
@@ -224,7 +226,8 @@ rule run_polegon:
 
 
 def merge_chunks_params(wildcards):
-    dir = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks_dir
+    _ = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks_check # need this to trigger checkpoint
+    dir = expand(CHUNK_PATH, chrom=wildcards.chrom)[0]
     out = expand(
         os.path.join(dir, "{id}.yaml"),
         id=glob_wildcards(os.path.join(dir, "{id}.yaml")).id
@@ -233,7 +236,8 @@ def merge_chunks_params(wildcards):
 
 
 def merge_chunks_input(wildcards, regex):
-    dir = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks_dir
+    _ = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks_check # need this to trigger checkpoint
+    dir = expand(CHUNK_PATH, chrom=wildcards.chrom)[0]
     out = expand(
         os.path.join(dir, f"{{id}}_{regex}_{{rep}}.txt"),
         rep=wildcards.rep,
