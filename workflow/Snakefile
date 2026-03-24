@@ -226,8 +226,8 @@ rule run_polegon:
 
 
 def merge_chunks_params(wildcards):
-    chk = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks_check
-    dir = os.path.join(OUTPUT_DIR, wildcards.chrom, "chunks")
+    _ = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks_check # need this to trigger checkpoint
+    dir = expand(CHUNK_PATH, chrom=wildcards.chrom)[0]
     out = expand(
         os.path.join(dir, "{id}.yaml"),
         id=glob_wildcards(os.path.join(dir, "{id}.yaml")).id
@@ -236,8 +236,8 @@ def merge_chunks_params(wildcards):
 
 
 def merge_chunks_input(wildcards, regex):
-    chk = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks_check
-    dir = os.path.join(OUTPUT_DIR, wildcards.chrom, "chunks")
+    _ = checkpoints.chunk_chromosomes.get(chrom=wildcards.chrom).output.chunks_check # need this to trigger checkpoint
+    dir = expand(CHUNK_PATH, chrom=wildcards.chrom)[0]
     out = expand(
         os.path.join(dir, f"{{id}}_{regex}_{{rep}}.txt"),
         rep=wildcards.rep,
