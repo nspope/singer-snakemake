@@ -1,7 +1,7 @@
 # Running the pipeline with SLURM
 
 Snakemake supports using [SLURM](https://github.com/SchedMD/slurm) to distribute jobs across HPC cluster nodes.
-To run the pipeline on your SLURM cluster you will need:
+To run the pipeline on your SLURM cluster you will need to:
 1. Install Snakemake's SLURM executor plugin
 2. Create a SLURM cluster profile
 3. Tell Snakemake to use SLURM
