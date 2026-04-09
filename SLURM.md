@@ -31,7 +31,7 @@ touch config.yaml
 
 The profile configuration will depend on your HPC, the exact parameters in the configuration file (e.g., chunk size), 
 and the amount of data used in inference (sample size, genome size, etc.). 
-We found that for 100 human genomes split into 1Mb chunks, you'd need the following resources (to be added to your `config.yaml`):
+For example, for 100 human genomes split into 1Mb chunks, the following resources seem to be sufficient (to be added to your `config.yaml`):
 
 ```yaml
 # ---------------------------------------------------------------------------
