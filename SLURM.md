@@ -20,7 +20,7 @@ pip install snakemake-executor-plugin-slurm
 ## Creating a simple SLURM profile
 
 You can either create a __global__ or __workflow__-specific profile in Snakemake (see [here](https://snakemake.readthedocs.io/en/stable/executing/cli.html#profiles) for more details).
-We recommend you to start with a simple profile that will set shared options and resources for all steps in the pipeline.
+Start with a simple profile that will set shared options and resources for all steps in the pipeline, then adjust per rule as needed.
 
 First, create a subdirectory within `singer-snakemake` called `simple_profile` where your configuration file will be placed:
 
