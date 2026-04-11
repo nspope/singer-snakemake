@@ -103,9 +103,15 @@ for i, (params_file, recomb_file, node_file, mutation_file, branch_file) in enum
 
     params = yaml.safe_load(open(params_file))
     block_start = params['singer']['start']
-    # FIXME: change to dict
-    singer_parameters.append(params['singer'])
-    polegon_parameters.append(params['polegon'])
+    if snakemake.params.record_chunk_provenance:
+        # FIXME: use dicts not lists
+        singer_parameters.append(params['singer'])
+        polegon_parameters.append(params['polegon'])
+
+    logfile.write(f"{tag()} Converting chunk {i} with params: {params}\n")
+    if os.path.getsize(node_file) == 0:
+        logfile.write(f"{tag()} SINGER output is empty, treating chunk as missing\n")
+        continue
 
     # nodes
     node_time = np.loadtxt(node_file)
@@ -132,9 +138,14 @@ for i, (params_file, recomb_file, node_file, mutation_file, branch_file) in enum
                 population=population[individual],
                 individual=individual,
             )
+        logfile.write(
+            f"{tag()} Added {tables.individuals.num_rows} individuals "
+            f"in {tables.populations.num_rows} populations\n"
+        )
     for t in node_time:
         if t > 0.0:
             tables.nodes.add_row(time=t)
+    logfile.write(f"{tag()} Node table size: {tables.nodes.num_rows}\n")
 
     # edges
     edge_span = np.loadtxt(branch_file)
@@ -150,6 +161,7 @@ for i, (params_file, recomb_file, node_file, mutation_file, branch_file) in enum
         parent=parent_indices,
         child=child_indices
     )
+    logfile.write(f"{tag()} Edge table size: {tables.edges.num_rows}\n")
 
     # mutations
     mutations = np.loadtxt(mutation_file)
@@ -173,6 +185,7 @@ for i, (params_file, recomb_file, node_file, mutation_file, branch_file) in enum
             node=mut_node if mut_node < num_samples else mut_node + num_nodes,
             derived_state=site_alleles[mut_state],
         ) 
+    logfile.write(f"{tag()} Mutations table size: {tables.mutations.num_rows}\n")
 
 # rebuild mutations table in time order at each position
 mut_time = tables.nodes.time[tables.mutations.node]
