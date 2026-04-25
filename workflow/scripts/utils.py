@@ -8,6 +8,7 @@ import numpy as np
 import msprime
 import typing
 import tskit
+from collections import defaultdict
 
 
 def bitmask_to_arrays(bitmask: np.ndarray, *, insert_breakpoints: np.ndarray = None) -> msprime.RateMap:
@@ -214,4 +215,58 @@ def extract_accessible_ratemap(ts: tskit.TreeSequence) -> msprime.RateMap:
     new_breakpoints, new_accessible = compactify_run_length_encoding(breakpoints, accessible)
     ratemap = msprime.RateMap(position=new_breakpoints, rate=new_accessible)
     return ratemap
+
+
+def merge_intervals(intervals: np.ndarray) -> np.ndarray:
+    """
+    Sort and merge overlapping or adjacent intervals.
+    """
+    if intervals.shape[0] < 2: return intervals
+    order = np.argsort(intervals[:, 0], kind="stable")
+    left, right = intervals[order].T
+    # interval i is a new group if left[i] > max_right[i-1]
+    max_right = np.maximum.accumulate(right)
+    new_group = np.append(True, left[1:] > max_right[:-1])
+    group_id = np.cumsum(new_group) - 1
+    num_groups = group_id[-1] + 1
+    # merged left is first left, merged right is max right, per group
+    merged_left = left[new_group]
+    merged_right = np.zeros(num_groups, dtype=right.dtype)
+    np.maximum.at(merged_right, group_id, right)
+    return np.column_stack([merged_left, merged_right])
+
+
+# TODO clean up
+def parse_sample_bedmask(
+    bed_path: str,
+    sample_map: dict[str, int],
+) -> dict[int, np.ndarray]:
+    """
+    Load per-sample mask intervals from a BED file, separate by sample, and sort and merge. 
+    The fourth column should be the sample name. `sample_map` maps the sample
+    name to the integer ids used to key the output.
+    """
+    # Read raw data: columns 1,2 as float (start, end), column 3 as string (sample)
+    raw_intervals = defaultdict(list)
+    with open(bed_path) as f:
+        for line in f:
+            fields = line.rstrip("\n").split("\t")
+            if len(fields) < 4:
+                continue
+            sample_name = fields[3]
+            if sample_name not in sample_map:
+                continue
+            sample_id = sample_map[sample_name]
+            start = float(fields[1])
+            end = float(fields[2])
+            raw_intervals[sample_id].append((start, end))
+
+    # Convert to arrays, sort, merge
+    result = {}
+    for sample_id, pairs in raw_intervals.items():
+        intervals = np.array(pairs, dtype=np.float64)
+        intervals = merge_intervals(intervals)
+        if intervals.shape[0] > 0:
+            result[sample_id] = intervals
+    return result
 
