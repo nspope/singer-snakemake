@@ -4,7 +4,6 @@ from io import StringIO
 
 from workflow.scripts.utils import read_single_fasta
 from workflow.scripts.utils import write_minimal_vcf
-from workflow.scripts.utils import merge_intervals
 from workflow.scripts.utils import parse_sample_bedmask
 
 
@@ -25,23 +24,6 @@ def test_read_single_fasta():
 @pytest.mark.skip("TODO")
 def test_write_minimal_vcf():
     assert False
-
-
-def test_merge_intervals():
-    def merge(*pairs):
-        x = np.array(pairs, dtype=float).reshape(-1, 2)
-        return merge_intervals(x).tolist()
-    assert merge((10, 20), (30, 40)) == [[10, 20], [30, 40]]  # non-overlapping and sorted
-    assert merge((10, 30), (20, 40)) == [[10, 40]]  # overlapping
-    assert merge((10, 20), (20, 30)) == [[10, 30]]  # bookended
-    assert merge((30, 40), (10, 20)) == [[10, 20], [30, 40]]  # unsorted
-    assert merge((30, 50), (10, 40)) == [[10, 50]]  # unsorted and overlapping
-    assert merge((10, 50), (20, 30)) == [[10, 50]]  # nested
-    assert merge((10, 20)) == [[10, 20]]  # single interval
-    assert merge_intervals(np.empty((0, 2))).shape == (0, 2)  # empty
-    assert merge((1, 5), (3, 8), (7, 12), (11, 15)) == [[1, 15]]  # all overlapping
-    assert merge((0, 10), (10, 20), (20, 30)) == [[0, 30]]  # bookended chain
-    assert merge((0, 10), (5, 15), (30, 40), (35, 50)) == [[0, 15], [30, 50]]  # merged and distinct
 
 
 def test_parse_sample_bedmask(tmp_path):

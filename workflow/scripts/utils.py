@@ -236,7 +236,6 @@ def merge_intervals(intervals: np.ndarray) -> np.ndarray:
     return np.column_stack([merged_left, merged_right])
 
 
-# TODO clean up
 def parse_sample_bedmask(
     bed_path: str,
     sample_map: dict[str, int],
@@ -246,27 +245,194 @@ def parse_sample_bedmask(
     The fourth column should be the sample name. `sample_map` maps the sample
     name to the integer ids used to key the output.
     """
-    # Read raw data: columns 1,2 as float (start, end), column 3 as string (sample)
-    raw_intervals = defaultdict(list)
-    with open(bed_path) as f:
-        for line in f:
+    # collect intervals by sample id
+    unprocessed_intervals = defaultdict(list)
+    with open(bed_path) as handle:
+        for line in handle:
             fields = line.rstrip("\n").split("\t")
-            if len(fields) < 4:
-                continue
-            sample_name = fields[3]
-            if sample_name not in sample_map:
-                continue
+            assert len(fields) == 4, "Sample-specific bedmask must have four columns"
+            _, start, end, sample_name = fields
+            if sample_name not in sample_map: continue
             sample_id = sample_map[sample_name]
-            start = float(fields[1])
-            end = float(fields[2])
-            raw_intervals[sample_id].append((start, end))
-
-    # Convert to arrays, sort, merge
-    result = {}
-    for sample_id, pairs in raw_intervals.items():
-        intervals = np.array(pairs, dtype=np.float64)
-        intervals = merge_intervals(intervals)
+            unprocessed_intervals[sample_id].append((float(start), float(end)))
+    # sort and merge intervals
+    intervals_by_sample = {}
+    for sample_id, pairs in unprocessed_intervals.items():
+        intervals = merge_intervals(np.array(pairs))
         if intervals.shape[0] > 0:
-            result[sample_id] = intervals
-    return result
+            intervals_by_sample[sample_id] = intervals
+    return intervals_by_sample
+
+
+def clip_and_shift_intervals(
+    intervals: np.ndarray,
+    start: float = 0.0,
+    end: float = np.inf,
+    shift: bool = True,
+) -> np.ndarray:
+    """
+    Intersect `intervals` with `[start, end)`. If `shift`, then the coordinate
+    system will start at zero.
+    """
+    left, right = intervals.T
+    overlaps = np.minimum(right, end) - np.maximum(left, start) > 0
+    intervals = np.clip(intervals[overlaps], start, end)
+    if shift: intervals -= start
+    return intervals
+
+
+def interval_coverage(
+    intervals_by_sample: dict[int, np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Find unique intervals and count coverage.  Returns `(starts, ends, coverage)`.  
+    Zero-length intervals (from book-ended intervals) are excluded.
+    """
+    assert intervals_by_sample, "Must have at least one set of intervals to intersect"
+    starts, ends = np.concatenate(list(intervals_by_sample.values())).T
+    positions = np.concatenate([starts, ends])
+    deltas = np.concatenate([np.ones_like(starts, dtype=int), -np.ones_like(ends, dtype=int)])
+    order = np.lexsort((deltas, positions))
+    breakpoints = positions[order]
+    counts = np.cumsum(deltas[order])
+    starts = breakpoints[:-1]
+    ends = breakpoints[1:]
+    counts = counts[:-1]
+    valid = ends > starts
+    intervals = np.stack([starts, ends], axis=-1)[valid]
+    coverage = counts[valid]
+    return intervals, coverage
+
+
+def remove_partial_ancestry(
+    ts: tskit.TreeSequence,
+    intervals_by_sample: dict[int, np.ndarray],
+    filter_nodes: bool = True,
+) -> tskit.TreeSequence:
+    """
+    Remove ancestry given "masked" `intervals_by_sample`, leaving subtrees.
+    These are simplified such that there are no dangling nodes or mutations.
+    If `filter_nodes` then the node table is left intact, maintaing IDs.
+    """
+    edge_order = np.argsort(ts.edges_child, kind="stable")
+    node_index = np.searchsorted(ts.edges_child[edge_order], np.arange(ts.num_nodes + 1))
+    drop_edge = np.full(ts.num_edges, False)
+    drop_muts = np.full(ts.num_mutations, False)
+
+    new_left, new_right, new_parent, new_child = [], [], [], []
+    for sample, intervals in intervals_by_sample.items():
+        edge_ids = edge_order[node_index[sample]:node_index[sample + 1]]
+        if edge_ids.size == 0: continue  # sample is missing
+        if intervals.size == 0: continue  # nothing to mask
+        assert np.all(np.diff(intervals.flatten()) >= 0)
+        interval_left, interval_right = intervals.T
+        # filter edges
+        for e in edge_ids:
+            edge_left, edge_right, edge_parent = \
+                ts.edges_left[e], ts.edges_right[e], ts.edges_parent[e]
+            # overlaps where interval_left < edge_right and interval_right > edge_left
+            first = np.searchsorted(interval_right, edge_left, side="right")
+            last = np.searchsorted(interval_left, edge_right, side="left")
+            if first < last:
+                # traverse overlapping intervals, outputting the gaps between them
+                drop_edge[e] = True
+                position = edge_left
+                for k in range(first, last):
+                    clipped_left = max(interval_left[k], edge_left)
+                    clipped_right = min(interval_right[k], edge_right)
+                    if position < clipped_left:
+                        new_left.append(position)
+                        new_right.append(clipped_left)
+                        new_parent.append(edge_parent)
+                        new_child.append(sample)
+                    position = clipped_right
+                if position < edge_right:
+                    new_left.append(position)
+                    new_right.append(edge_right)
+                    new_parent.append(edge_parent)
+                    new_child.append(sample)
+        # filter mutations; we only have to worry about mutations above
+        # a sample node, as these will be retained by simplify
+        sample_muts = np.flatnonzero(ts.mutations_node == sample)
+        if sample_muts.size > 0:
+            muts_position = ts.sites_position[ts.mutations_site[sample_muts]]
+            muts_right = np.searchsorted(interval_right, muts_position, side="right")
+            muts_left = np.searchsorted(interval_left, muts_position, side="right") - 1
+            muts_inside = muts_left == muts_right
+            drop_muts[sample_muts[muts_inside]] = True
+
+    tables = ts.dump_tables()
+    tables.mutations.keep_rows(~drop_muts)
+    tables.edges.keep_rows(~drop_edge)
+    tables.edges.append_columns(
+        left=np.asarray(new_left, dtype=tables.edges.left.dtype),
+        right=np.asarray(new_right, dtype=tables.edges.right.dtype),
+        parent=np.asarray(new_parent, dtype=tables.edges.parent.dtype),
+        child=np.asarray(new_child, dtype=tables.edges.child.dtype),
+    )
+    tables.edges.squash()
+    tables.sort()
+    tables.simplify(keep_unary=True, filter_nodes=filter_nodes)
+    tables.build_index()
+    tables.compute_mutation_parents()
+    return tables.tree_sequence()
+
+
+# TODO: clean up
+def adjust_edge_spans_for_partial_ancestry(
+    ts: tskit.TreeSequence,
+    intervals_by_sample: dict[int, np.ndarray],
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Apply `remove_partial_ancestry` to the tree sequence, then find the
+    surviving genomic span for each edge, and the positions and nodes of
+    removed mutations.
+    """
+    masked_ts = remove_partial_ancestry(ts, intervals_by_sample, filter_nodes=False)
+    # group edges by parent-child combination
+    edge_group = lambda p, c: p.astype(np.int64) * ts.num_nodes + c.astype(np.int64)
+    # find group start and end for every masked edge
+    masked_group = edge_group(masked_ts.edges_parent, masked_ts.edges_child)
+    masked_order = np.lexsort((masked_ts.edges_left, masked_group))
+    masked_group = masked_group[masked_order]
+    masked_left = masked_ts.edges_left[masked_order]
+    masked_right = masked_ts.edges_right[masked_order]
+    unique_group, group_start = np.unique(masked_group, return_index=True)
+    group_end = np.append(group_start[1:], len(masked_group))
+    # compute overlap with masked edges for each original edge
+    original_group = edge_group(ts.edges_parent, ts.edges_child)
+    pruned_span = np.zeros(ts.num_edges, dtype=np.float64)
+    for e in ts.edges():
+        key = original_group[e.id]
+        idx = np.searchsorted(unique_group, key)
+        if idx >= len(unique_group) or unique_group[idx] != key:
+            continue  # group no longer exists after pruning
+        lo, hi = group_start[idx], group_end[idx]
+        left, right = masked_left[lo:hi], masked_right[lo:hi]
+        first = np.searchsorted(right, e.left, side="right")
+        last = np.searchsorted(left, e.right, side="left")
+        for j in range(first, last):
+            overlap = min(right[j], e.right) - max(left[j], e.left)
+            pruned_span[e.id] += max(0, overlap)
+
+    # find node and position for removed mutations
+    # TODO: clean up, not sure if this is the best output format
+    surviving = set()
+    for j in range(masked_ts.num_mutations):
+        pos = float(masked_ts.sites_position[masked_ts.mutations_site[j]])
+        node = int(masked_ts.mutations_node[j])
+        surviving.add((pos, node))
+
+    removed_positions = []
+    removed_nodes = []
+    for j in range(ts.num_mutations):
+        pos = float(ts.sites_position[ts.mutations_site[j]])
+        node = int(ts.mutations_node[j])
+        if (pos, node) not in surviving:
+            removed_positions.append(pos)
+            removed_nodes.append(node)
+    removed_positions = np.array(removed_positions, dtype=np.float64)
+    removed_nodes = np.array(removed_nodes, dtype=np.int32)
+
+    return pruned_span, removed_positions, removed_nodes
 
