@@ -283,10 +283,9 @@ def clip_and_shift_intervals(
 
 def interval_coverage(
     intervals_by_sample: dict[int, np.ndarray],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray]:
     """
-    Find unique intervals and count coverage.  Returns `(starts, ends, coverage)`.  
-    Zero-length intervals (from book-ended intervals) are excluded.
+    Find unique intervals and count coverage. Intervals are left-inclusive.
     """
     assert intervals_by_sample, "Must have at least one set of intervals to intersect"
     starts, ends = np.concatenate(list(intervals_by_sample.values())).T
@@ -409,14 +408,13 @@ def adjust_edge_spans_for_partial_ancestry(
             continue  # group no longer exists after pruning
         lo, hi = group_start[idx], group_end[idx]
         left, right = masked_left[lo:hi], masked_right[lo:hi]
-        first = np.searchsorted(right, e.left, side="right")
-        last = np.searchsorted(left, e.right, side="left")
-        for j in range(first, last):
-            overlap = min(right[j], e.right) - max(left[j], e.left)
-            pruned_span[e.id] += max(0, overlap)
+        overlap = np.minimum(right, e.right) - np.maximum(left, e.left)
+        pruned_span[e.id] = np.sum(np.maximum(0, overlap))
 
     # find node and position for removed mutations
-    # TODO: clean up, not sure if this is the best output format
+    # TODO: clean up, not sure if this is the best output format. it's not clear to me
+    # that the mutation order will survive conversion from SINGER flat-file to tree sequence
+    # (it probably won't) so the best return might simply be the surviving set.
     surviving = set()
     for j in range(masked_ts.num_mutations):
         pos = float(masked_ts.sites_position[masked_ts.mutations_site[j]])
