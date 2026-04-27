@@ -39,6 +39,7 @@ MIN_SITES = float(config["min-sites"])
 MAX_MISSING = float(config["max-missing"])
 MIN_GAP_SIZE = float(config["min-gap-size"])
 MIN_BRANCH_LENGTH = float(config["min-branch-length"])
+MAX_MASKED_SAMPLES = int(config.get("max-masked-samples", 0))
 
 SINGER_MCMC_THIN = int(config["singer-mcmc-thin"])
 SINGER_MCMC_SAMPLES = int(config["singer-mcmc-samples"])
@@ -127,6 +128,7 @@ checkpoint chunk_chromosomes:
         recomb_rate = os.path.join(CHROM_PATH, "{chrom}.recomb_rate.p"),
         inaccessible = os.path.join(CHROM_PATH, "{chrom}.inaccessible.p"),
         polarisation = os.path.join(CHROM_PATH, "{chrom}.polarisation"),
+        node_masks = os.path.join(CHROM_PATH, "{chrom}.nodemask.p"),
         filtered = os.path.join(CHROM_PATH, "{chrom}.filtered.p"),
         omitted = os.path.join(CHROM_PATH, "{chrom}.omitted.p"),
         metadata = os.path.join(CHROM_PATH, "{chrom}.vcf.samples.p"),
@@ -137,12 +139,14 @@ checkpoint chunk_chromosomes:
     log:
         log = os.path.join(CHROM_PATH, "{chrom}.log"),
     params:
+        chunks_dir = CHUNK_PATH,
         seed = lambda w: SEED_ARRAY[w.chrom],
         max_chunk_size = MAX_CHUNK_SIZE,
         min_chunk_size = MIN_CHUNK_SIZE,
         max_missing = MAX_MISSING,
         min_sites = MIN_SITES,
         min_gap_size = MIN_GAP_SIZE,
+        max_masked_samples = MAX_MASKED_SAMPLES,
         mutation_rate = MUTATION_RATE,
         recombination_rate = RECOMBINATION_RATE,
         polarised = POLARISED,
@@ -159,7 +163,7 @@ checkpoint chunk_chromosomes:
         model_masked_sequence = config.get("model-masked-sequence", True),
         random_polarisation = config.get("random-polarisation", True),
         remove_unpolarised = config.get("remove-unpolarised", False),
-        chunks_dir = CHUNK_PATH
+        impute_sample_masks = config.get("impute-sample-masks", True),
     script:
         "scripts/chunk_chromosomes.py"
 

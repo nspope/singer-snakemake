@@ -71,9 +71,10 @@ def write_minimal_vcf(handle, sample_names, CHROM, POS, ID, REF, ALT, GT):
     handle.write("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT")
     for sample in sample_names: handle.write(f"\t{sample}")
     handle.write("\n")
+    code = lambda x: "." if x < 0 else x
     for chrom, pos, id, ref, alt, gt in zip(CHROM, POS, ID, REF, ALT, GT):
         handle.write(f"{chrom}\t{pos}\t{id}\t{ref}\t{alt}\t.\tPASS\t.\tGT")
-        for (a, b) in gt: handle.write(f"\t{a}|{b}")
+        for (a, b) in gt: handle.write(f"\t{code(a)}|{code(b)}")
         handle.write("\n")
 
 
