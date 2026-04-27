@@ -379,6 +379,7 @@ def remove_partial_ancestry(
 
 
 # TODO: clean up
+# TODO: this is probably not needed
 def adjust_edge_spans_for_partial_ancestry(
     ts: tskit.TreeSequence,
     intervals_by_sample: dict[int, np.ndarray],
