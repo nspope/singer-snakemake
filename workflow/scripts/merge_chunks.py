@@ -17,6 +17,7 @@ from datetime import datetime
 
 from utils import absorb_mutations_above_root
 from utils import find_genealogical_gaps
+from utils import remove_partial_ancestry
 
 
 # --- lib --- #
@@ -268,6 +269,28 @@ if snakemake.params.repolarise:
         f"{tag()} Absorbed {prev_num_mutations - ts.num_mutations} mutations "
         f"above the root, switching the ancestral state at these sites\n"
     )
+
+# delete partial ancestry from sample node masks
+if snakemake.params.delete_imputed_intervals:
+    node_masks = pickle.load(open(snakemake.input.node_masks, "rb"))
+    if node_masks:
+        logfile.write(
+            f"{tag()} Removing masked intervals that are specific to {len(node_masks)} "
+            f"sample nodes, as well as shared ancestry in these intervals\n"
+        )
+        prev_num_edges, prev_num_trees = ts.num_edges, ts.num_trees
+        prev_num_sites, prev_num_mutations = ts.num_sites, ts.num_mutations
+        ts = remove_partial_ancestry(ts, node_masks)
+        logfile.write(
+            f"{tag()} Deleting per-sample masks changed the number of edges from "
+            f"{prev_num_edges} to {ts.num_edges} and the number of trees from "
+            f"{prev_num_trees} to {ts.num_trees}\n"
+        )
+        logfile.write(
+            f"{tag()} Deleting per-sample masks changed the number of sites from "
+            f"{prev_num_sites} to {ts.num_sites} and the number of mutations from "
+            f"{prev_num_mutations} to {ts.num_mutations}\n"
+        )
 
 # delete masked intervals that are not spanned by any edge
 if snakemake.params.delete_genealogical_gaps:

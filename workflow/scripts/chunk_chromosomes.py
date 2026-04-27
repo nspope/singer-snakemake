@@ -199,7 +199,7 @@ if samplemask:
     samplemask_intervals, samplemask_coverage = interval_coverage(samplemask)
     max_masked_samples = snakemake.params.max_masked_samples
     # TODO: convert intervals to int in `interval_coverage` and document
-    samplemask_inaccessible = samplemask_intervals[samplemask_coverage > max_masked_samples].astype(int)
+    samplemask_inaccessible = samplemask_intervals[samplemask_coverage > max_masked_samples]
     logfile.write(
         f"{tag()} Dropping {samplemask_inaccessible.shape[0]} intervals "
         f"({np.diff(samplemask_inaccessible, axis=1).sum()} bp) "

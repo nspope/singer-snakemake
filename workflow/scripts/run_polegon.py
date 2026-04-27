@@ -90,12 +90,24 @@ def singer_to_tree_sequence(
     return tables.tree_sequence()
 
 
+def get_nonmissing_root(tree: tskit.Tree) -> int:
+    """
+    Root node when some samples are missing (isolated)
+    """
+    if len(tree.roots) == 1:
+        return tree.root
+    else:
+        nonmissing_root = [i for i in tree.roots if tree.num_samples(i) > 1]
+        assert len(nonmissing_root) == 1
+        return nonmissing_root[0]
+
+
 def root_table(ts: tskit.TreeSequence) -> np.ndarray:
     left, root = 0.0, tskit.NULL
     stems = []
     for tree in ts.trees():
         right = tree.interval.left
-        next_root = tree.root if tree.num_edges else tskit.NULL
+        next_root = get_nonmissing_root(tree) if tree.num_edges else tskit.NULL
         if next_root != root:
             stems.append([left, right, tskit.NULL, root])
             left, root = right, next_root
@@ -133,6 +145,7 @@ def write_polegon_inputs(
     np.savetxt(nodes_file, ts.tables.nodes.time)
     np.savetxt(branches_file, edge_table)
     np.savetxt(mutations_file, mutation_table(ts))
+
 
 
 # --- implm --- #
