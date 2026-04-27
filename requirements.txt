@@ -1,6 +1,6 @@
 tskit @ git+https://github.com/tskit-dev/tskit.git#subdirectory=python
 tszip
-snakemake=9.16.2
+snakemake==9.16.2
 stdpopsim>=0.3.0
 demes
 msprime
