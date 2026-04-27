@@ -39,7 +39,7 @@ MIN_SITES = float(config["min-sites"])
 MAX_MISSING = float(config["max-missing"])
 MIN_GAP_SIZE = float(config["min-gap-size"])
 MIN_BRANCH_LENGTH = float(config["min-branch-length"])
-MAX_MASKED_SAMPLES = int(config.get("max-masked-samples", 0))
+MAX_MASKED_SAMPLES = int(config.get("max-masked-samples", 1))
 
 SINGER_MCMC_THIN = int(config["singer-mcmc-thin"])
 SINGER_MCMC_SAMPLES = int(config["singer-mcmc-samples"])
