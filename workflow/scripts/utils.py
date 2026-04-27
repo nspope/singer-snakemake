@@ -250,7 +250,7 @@ def parse_sample_bedmask(
     unprocessed_intervals = defaultdict(list)
     with open(bed_path) as handle:
         for line in handle:
-            fields = line.rstrip("\n").split("\t")
+            fields = line.split()
             assert len(fields) == 4, "Sample-specific bedmask must have four columns"
             _, start, end, sample_name = fields
             if sample_name not in sample_map: continue
@@ -261,7 +261,7 @@ def parse_sample_bedmask(
     for sample_id, pairs in unprocessed_intervals.items():
         intervals = merge_intervals(np.array(pairs))
         if intervals.shape[0] > 0:
-            intervals_by_sample[sample_id] = intervals
+            intervals_by_sample[sample_id] = intervals.astype(np.int64)
     return intervals_by_sample
 
 

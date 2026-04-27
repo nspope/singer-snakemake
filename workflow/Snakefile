@@ -263,6 +263,7 @@ rule merge_chunks:
         omitted = rules.chunk_chromosomes.output.omitted,
         metadata = rules.chunk_chromosomes.output.metadata,
         alleles = rules.chunk_chromosomes.output.alleles,
+        node_masks = rules.chunk_chromosomes.output.node_masks,
         params = merge_chunks_params,
         recombs = lambda w: merge_chunks_input(w, "recombs"),
         muts = lambda w: merge_chunks_input(w, "muts"),
@@ -280,6 +281,7 @@ rule merge_chunks:
         repolarise = config.get("repolarise-ancestral-state", True),
         delete_genealogical_gaps = config.get("delete-genealogical-gaps", True),
         delete_masked_intervals = config.get("delete-masked-intervals", False),
+        delete_imputed_intervals = config.get("delete-imputed-intervals", True),
         record_chunk_provenance = config.get("record-chunk-provenance", True),
     script:
         "scripts/merge_chunks.py"
