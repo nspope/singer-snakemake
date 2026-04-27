@@ -214,6 +214,7 @@ rule run_polegon:
         nodes = os.path.join(CHUNK_PATH, "{id}_nodes_{rep}.txt"),
         muts = os.path.join(CHUNK_PATH, "{id}_muts_{rep}.txt"),
         omitted = rules.chunk_chromosomes.output.omitted,
+        node_masks = rules.chunk_chromosomes.output.node_masks,
     output:  
         # TODO mark temp
         nodes = os.path.join(CHUNK_PATH, "{id}_polegon_{rep}.txt"),

@@ -27,6 +27,7 @@ logfile = open(snakemake.log.log, "w")
 use_polegon = snakemake.params.use_polegon
 use_mutational_span = snakemake.params.use_mutational_span
 drop_omitted = snakemake.params.drop_omitted
+use_sample_masks = snakemake.params.use_sample_masks
 failed_chunk = os.path.getsize(snakemake.input.nodes) == 0
 
 if use_polegon and not failed_chunk:
@@ -40,6 +41,8 @@ if use_polegon and not failed_chunk:
     # POLEGON expects inputs named slightly differently than SINGER output
     prefix = snakemake.input.muts.replace("_muts_", "_").removesuffix(".txt")
     shutil.copy(snakemake.input.nodes, f"{prefix}_nodes.txt")
+
+    # Soft-mask the input to
 
     # Adjust mutation list to omit specified sites. These will not be used for
     # dating, and are effectively inaccessible sequence. However, they were used to
