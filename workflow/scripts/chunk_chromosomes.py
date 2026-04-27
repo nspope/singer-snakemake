@@ -24,12 +24,24 @@ from utils import bitmask_to_arrays
 from utils import ratemap_to_text
 from utils import read_single_fasta
 from utils import write_minimal_vcf
+from utils import parse_sample_bedmask
+from utils import interval_coverage
 
 
 # --- lib --- #
 
 def tag(): 
     return f"[singer-snakemake::{snakemake.rule}::{str(datetime.now())}]"
+
+
+def swap_binary_alleles(genotypes: np.ndarray) -> np.ndarray:
+    """
+    Swap zeros with ones in `genotypes`, leaving other values untouched.
+    """
+    swapped_genotypes = genotypes.copy()
+    to_swap = np.logical_or(swapped_genotypes == 0, swapped_genotypes == 1)
+    swapped_genotypes[to_swap] = 1 - swapped_genotypes[to_swap]
+    return swapped_genotypes
 
 
 # --- implm --- #
@@ -173,7 +185,32 @@ else:
             f"'{stratify}' that isn't in the metadata"
 
 
+# per-sample masked intervals
+sample_mask_file = vcf_file.replace(".vcf.gz", ".sample.mask.bed")
+if not os.path.exists(sample_mask_file):
+    logfile.write(f"{tag()} Did not find {sample_mask_file}, assuming all samples are equally accessible\n")
+    samplemask = {}
+else:
+    sample_map = {name: i for i, name in enumerate(samples)}
+    samplemask = parse_sample_bedmask(sample_mask_file, sample_map)
+    logfile.write(f"{tag()} Parsed {len(samplemask)} per-sample interval masks\n")
+if samplemask:
+    # NOTE: filtering is on the basis of VCF samples, not haplotypes, so depends on ploidy
+    samplemask_intervals, samplemask_coverage = interval_coverage(samplemask)
+    max_masked_samples = snakemake.params.max_masked_samples
+    # TODO: convert intervals to int in `interval_coverage` and document
+    samplemask_inaccessible = samplemask_intervals[samplemask_coverage > max_masked_samples].astype(int)
+    logfile.write(
+        f"{tag()} Dropping {samplemask_inaccessible.shape[0]} intervals "
+        f"({np.diff(samplemask_inaccessible, axis=1).sum()} bp) "
+        f"with more than {max_masked_samples} missing samples\n"
+    )
+    for (a, b) in samplemask_inaccessible: bitmask[a:b] = True
+
+
 # convert to diploid VCF if necessary
+# FIXME: SINGER 0.1.9 supports haploid input, switch over
+nodemask = {}
 assert calldata.shape[2] == 2
 ploidy = 1 if np.all(calldata[..., 1] == -1) else 2
 if ploidy == 1:
@@ -181,6 +218,41 @@ if ploidy == 1:
     assert samples.size % 2 == 0, "VCF is haploid with an odd number of samples: cannot diploidize"
     samples = np.array([f"{a}_{b}" for a, b in zip(samples[::2], samples[1::2])], dtype=StringDType)
     calldata = calldata[..., 0].reshape(-1, samples.size, 2)
+    if samplemask:
+        logfile.write(f"{tag()} VCF is diploidized, keeping one sample mask per haplotype\n")
+        for i in samplemask:
+            nodemask[i] = samplemask[i]
+else:
+    if samplemask:
+        logfile.write(f"{tag()} VCF is diploid, duplicating sample masks across haplotypes\n")
+        for i in samplemask:
+            nodemask[2 * i] = samplemask[i]
+            nodemask[2 * i + 1] = samplemask[i]
+
+
+# frequency imputation over per-sample masks: 
+if snakemake.params.impute_sample_masks and nodemask:
+    # FIXME: using a bitmask here is inefficient but transparent
+    to_impute = {}
+    for i, intervals in nodemask.items():
+        sample_bitmask = np.full(bitmask.size, False)
+        for (a, b) in intervals: sample_bitmask[a:b] = True
+        to_impute[i] = np.flatnonzero(sample_bitmask[positions - 1])
+        calldata[to_impute[i], i // 2, i % 2] = -1
+        logfile.write(f"{tag()} Imputing {to_impute[i].size} variants in sample mask for haplotype {i}\n")
+
+    imputation_counts = allel.GenotypeArray(calldata).count_alleles(max_allele=1)
+    total_counts = imputation_counts.sum(axis=1)
+    allele_frequency = np.where(total_counts > 0, imputation_counts[:, 1] / total_counts, 0.0)
+    for i in nodemask:
+        imputations = rng.binomial(1, allele_frequency[to_impute[i]])
+        calldata[to_impute[i], i // 2, i % 2] = imputations
+# NOTE: if imputation is disabled, then whatever the genotypes are on input will be
+# processed as usual. That is, if the genotypes are coded as missing they will
+# be dropped, and if they are coded as nonmissing then they will be used by
+# SINGER. This allows passing forwards a more complex imputation if desired.
+# Regardless, the per-sample masked intervals will be pruned from the ARG
+# prior to dating.
 
 
 # polarise alleles
@@ -188,7 +260,7 @@ has_ancestral_state = np.logical_or(ref_allele == anc_allele, alt_allele == anc_
 has_binary_state = calldata.max(axis=(-2, -1)) == 1
 polarised = np.logical_and.reduce([has_ancestral_state, has_binary_state, anc_allele != 'N', anc_allele != '-'])
 flip_alleles = np.logical_and(polarised, alt_allele == anc_allele)
-calldata[flip_alleles] = 1 - calldata[flip_alleles]
+calldata[flip_alleles] = swap_binary_alleles(calldata[flip_alleles])
 ref_allele[flip_alleles], alt_allele[flip_alleles] = \
     alt_allele[flip_alleles], ref_allele[flip_alleles]
 logfile.write(
@@ -204,7 +276,7 @@ assert np.max(positions) <= hapmap.sequence_length, "VCF position exceeds hapmap
 counts = genotypes.count_alleles()
 filter_segregating = counts.is_segregating()
 logfile.write(f"{tag()} Removed {np.sum(~filter_segregating)} non-segregating sites\n")
-filter_biallelic = has_binary_state
+filter_biallelic = counts[:, 2:].sum(axis=1) == 0
 logfile.write(f"{tag()} Removed {np.sum(~filter_biallelic)} non-biallelic sites\n")
 filter_nonmissing = counts.sum(axis=1) == 2 * samples.size
 logfile.write(f"{tag()} Removed {np.sum(~filter_nonmissing)} sites with missing data\n")
@@ -219,7 +291,7 @@ if snakemake.params.polarised and snakemake.params.remove_unpolarised:
 retain = np.logical_and.reduce([
     filter_segregating, 
     filter_biallelic, 
-    filter_nonmissing, 
+    filter_nonmissing,
     filter_accessible,
     filter_unmasked,
     filter_polarised,
@@ -281,7 +353,7 @@ logfile.write(
     f"(excluding flanks outside of variant positions) that delimit {windows.size - 1} "
     f"regions\n"
 )
-# TODO: log message is confusing as "regions" includes both unmasked and masked
+# FIXME: log message is confusing as "regions" includes both unmasked and masked
 windows_refined = [0.0]
 for (a, b) in zip(windows[:-1], windows[1:]):
     assert a == windows_refined[-1]
@@ -603,6 +675,7 @@ for i in np.flatnonzero(filter_chunks):
 
 # if unpolarised, randomly flip reference and alternate
 if snakemake.params.random_polarisation:
+    assert calldata.min() == 0 and calldata.max() == 1
     flip_alleles = np.full(polarised.size, False)
     flip_alleles[~polarised] = rng.binomial(1, 0.5, size=np.sum(~polarised))
     logfile.write(
@@ -611,7 +684,7 @@ if snakemake.params.random_polarisation:
     )
     ref_allele[flip_alleles], alt_allele[flip_alleles] = \
         alt_allele[flip_alleles], ref_allele[flip_alleles]
-    calldata[flip_alleles] = 1 - calldata[flip_alleles]
+    calldata[flip_alleles] = swap_binary_alleles(calldata[flip_alleles])
 
 
 # write out polarisation probabilities
@@ -620,14 +693,6 @@ if snakemake.params.polarised:
 else:
     polarisation = np.stack([positions[polarised], np.full(np.sum(polarised), 0.99)], axis=-1)
 np.savetxt(snakemake.output.polarisation, polarisation)
-
-
-# write out filtered vcf
-write_minimal_vcf(
-    open(snakemake.output.vcf, "w"),
-    samples, variant_chrom, positions, variant_id,
-    ref_allele, alt_allele, calldata,
-)
 
 
 # write out reference and alternate allele per position
@@ -640,6 +705,21 @@ pickle.dump(
 # write out individual metadata
 pickle.dump(metadata, open(snakemake.output.metadata, "wb"))
 
+
+# write out per haplotype masks
+pickle.dump(nodemask, open(snakemake.output.node_masks, "wb"))
+
+
+# write out filtered vcf
+write_minimal_vcf(
+    open(snakemake.output.vcf, "w"),
+    samples, variant_chrom, positions, variant_id,
+    ref_allele, alt_allele, calldata,
+)
+
+
+
+# TODO: delete from here on down---observed stats from treeseq instead
 
 # write out windowed statistics
 diversity[~filter_windows] = np.nan
