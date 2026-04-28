@@ -1,6 +1,7 @@
 """
-Calculate branch statistics from a tree sequence.  This is done via simulation,
-so as to account for missing data without excessive windowing.
+Calculate observed and expected statistics from a tree sequence.  The latter is
+done via simulation, so as to account for missing data without excessive
+windowing.
 
 Part of https://github.com/nspope/singer-snakemake.
 """
@@ -46,24 +47,23 @@ accessible_bp = np.diff(accessible.get_cumulative_mass(windows.position))
 omitted = np.array([s.metadata["omitted"] for s in trees.sites()])
 trees = trees.delete_sites(np.flatnonzero(omitted))
 
-# statistics that depend on observed sites
+# number of flipped sites (only relevant for observed data)
 repolarised = np.mean([s.metadata["flipped"] for s in trees.sites()])
-multimapped = np.mean(np.bincount(trees.mutations_site, minlength=trees.num_sites))
+
+if snakemake.params.simulate_mutations:
+    # simulate mutations given ARG topology and mask for posterior predictive checks
+    ts = msprime.sim_mutations(
+        trees,
+        rate=adjusted_mu, 
+        random_seed=seed, 
+        keep=False,
+    )
+else:
+    ts = trees
+
+# count multiple origins
+multimapped = np.mean(np.bincount(ts.mutations_site, minlength=ts.num_sites))
 # TODO: split by input frequency?
-
-# if there is no polarisation (or ascertainment) bias, then the number of mutations
-# carried by each haplotype should be equal on average because the root-to-leaf length
-# is the same across all leaves. 
-observed_load = mutational_load(trees)
-observed_load /= np.sum(accessible_bp)
-
-# simulate mutations given ARG topology and mask for posterior predictive checks
-ts = msprime.sim_mutations(
-    trees,
-    rate=adjusted_mu, 
-    random_seed=seed, 
-    keep=False,
-)
 
 diversity = ts.diversity(
     mode='site', 
@@ -82,20 +82,22 @@ tajima_d[windows.rate == 0.0] = np.nan
 afs = ts.allele_frequency_spectrum(
     mode='site', 
     span_normalise=False,
-    polarised=snakemake.params.polarised,
+    polarised=True,
 ) / accessible_bp[windows.rate == 1.0].sum()
 
-expected_load = mutational_load(ts)
-expected_load /= np.sum(accessible_bp)
+# if there is no polarisation (or ascertainment) bias, then the number of mutations
+# carried by each haplotype should be equal on average because the root-to-leaf length
+# is the same across all leaves. 
+load = mutational_load(ts)
+load /= np.sum(accessible_bp)
 
 stats = {
     "repolarised": repolarised,
     "multimapped": multimapped,
-    "observed_load": observed_load,
-    "expected_load": expected_load,
     "diversity": diversity, 
     "tajima_d": tajima_d, 
     "afs": afs, 
+    "load": load,
 }
 pickle.dump(stats, open(snakemake.output.stats, "wb"))
 
@@ -133,7 +135,7 @@ if snakemake.params.stratify is not None:
         afs = ts.allele_frequency_spectrum(
             sample_sets=[sample_set], 
             mode='site', 
-            polarised=snakemake.params.polarised,
+            polarised=True,
             span_normalise=False,
         ) / accessible_bp[windows.rate == 1.0].sum()
         strata_afs.append(afs)
