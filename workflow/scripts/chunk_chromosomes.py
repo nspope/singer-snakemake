@@ -523,22 +523,6 @@ logfile.write(
 )
 counts = genotypes.count_alleles(max_allele=1)
 assert counts.shape[1] == 2
-diversity, *_ = allel.windowed_diversity(
-    positions[statkeep],
-    counts[statkeep],
-    windows=statistics_windows_stack,
-    is_accessible=statmask,
-    fill=0.0,
-)
-tajima_d, *_ = allel.windowed_tajima_d(
-    positions[statkeep],
-    counts[statkeep],
-    windows=statistics_windows_stack,
-)
-if snakemake.params.polarised:
-    afs = allel.sfs(counts[statkeep, 1], n=2 * samples.size) / np.sum(statmask) 
-else:
-    afs = allel.sfs_folded(counts[statkeep], n=2 * samples.size) / np.sum(statmask)
 adjustment = sum(num_retained) / sum(num_retained + num_filtered)
 Ne = (
     allel.sequence_diversity(positions[statkeep], counts[statkeep], is_accessible=statmask) *
@@ -716,73 +700,3 @@ write_minimal_vcf(
     samples, variant_chrom, positions, variant_id,
     ref_allele, alt_allele, calldata,
 )
-
-
-
-# TODO: delete from here on down---observed stats from treeseq instead
-
-# write out windowed statistics
-diversity[~filter_windows] = np.nan
-tajima_d[~filter_windows] = np.nan
-vcf_stats = {
-    "diversity": diversity, 
-    "tajima_d": tajima_d, 
-    "afs": afs, 
-}
-pickle.dump(vcf_stats, open(snakemake.output.vcf_stats, "wb"))
-
-
-# calculate stratified statistics
-vcf_strata_stats = {}
-if stratify is not None:
-
-    sample_sets = defaultdict(list)
-    for i, md in enumerate(metadata):
-        sample_sets[md[stratify]].append(i)
-    strata = sorted([n for n in sample_sets.keys()])
-
-    # if data are haploid, then calldata has been artificially diploidized,
-    # and genotypes have to be expanded out to correctly assign individuals
-    # to subpopulations
-    if ploidy == 1:
-        haploid_calldata = calldata.reshape(-1, len(metadata))
-        haploid_calldata = np.stack([haploid_calldata, np.full_like(haploid_calldata, -1)], axis=-1)
-        haploid_genotypes = allel.GenotypeArray(haploid_calldata)
-        strata_counts = haploid_genotypes.count_alleles_subpops(sample_sets, max_allele=1)
-    else:
-        strata_counts = genotypes.count_alleles_subpops(sample_sets, max_allele=1)
-
-    strata_divergence = []
-    strata_afs = []
-    for i in range(len(strata)):
-        for j in range(i, len(strata)):
-            divergence, *_ = allel.windowed_divergence(
-                positions[statkeep],
-                strata_counts[strata[i]][statkeep],
-                strata_counts[strata[j]][statkeep],
-                windows=statistics_windows_stack,
-                is_accessible=statmask,
-                fill=0.0,
-            )
-            divergence[~filter_windows] = np.nan
-            strata_divergence.append(divergence)
-
-        if snakemake.params.polarised:
-            afs = allel.sfs(
-                strata_counts[strata[i]][statkeep, 1], 
-                n=ploidy * len(sample_sets[strata[i]]),
-            ) / np.sum(statmask)
-        else:
-            afs = allel.sfs_folded(
-                strata_counts[strata[i]][statkeep], 
-                n=ploidy * len(sample_sets[strata[i]]),
-            ) / np.sum(statmask)
-        strata_afs.append(afs)
-
-    strata_divergence = np.stack(strata_divergence).T
-    vcf_strata_stats = {
-        "strata": strata,
-        "divergence": strata_divergence,
-        "afs": strata_afs,
-    }
-pickle.dump(vcf_strata_stats, open(snakemake.output.vcf_strata_stats, "wb"))

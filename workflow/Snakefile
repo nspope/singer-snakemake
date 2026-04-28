@@ -122,8 +122,6 @@ checkpoint chunk_chromosomes:
         chunks_check = touch(os.path.join(CHROM_PATH, "chunks.done")),
         # TODO: mark VCF temp, but need to include as input to SINGER to make persistant
         vcf = os.path.join(CHROM_PATH, "{chrom}.vcf"),
-        vcf_stats = os.path.join(CHROM_PATH, "{chrom}.vcf.stats.p"),
-        vcf_strata_stats = os.path.join(CHROM_PATH, "{chrom}.vcf.strata_stats.p"),
         mut_rate = os.path.join(CHROM_PATH, "{chrom}.mut_rate.p"),
         recomb_rate = os.path.join(CHROM_PATH, "{chrom}.recomb_rate.p"),
         inaccessible = os.path.join(CHROM_PATH, "{chrom}.inaccessible.p"),
@@ -287,7 +285,29 @@ rule merge_chunks:
         "scripts/merge_chunks.py"
         
 
-rule tree_statistics:
+rule observed_tree_statistics:
+    """
+    Calculate observed summary statistics across MCMC iterations. These
+    could change across iterations due to repolarisation.
+    """
+    input:
+        mut_rate = rules.chunk_chromosomes.output.mut_rate,
+        inaccessible = rules.chunk_chromosomes.output.inaccessible,
+        windows = rules.chunk_chromosomes.output.windows,
+        alleles = rules.chunk_chromosomes.output.alleles,
+        trees = rules.merge_chunks.output.trees,
+    output:
+        stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.observed_stats.p"),
+        strata_stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.observed_strata_stats.p"),
+    params:
+        stratify = STRATIFY_BY,
+        polarised = POLARISED,
+        simulate_mutations = False,
+    script:
+        "scripts/tree_statistics.py"
+
+
+rule expected_tree_statistics:
     """
     Calculate expected summary statistics across MCMC iterations.
     """
@@ -298,11 +318,11 @@ rule tree_statistics:
         alleles = rules.chunk_chromosomes.output.alleles,
         trees = rules.merge_chunks.output.trees,
     output:
-        stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.stats.p"),
-        strata_stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.strata_stats.p"),
+        stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.expected_stats.p"),
+        strata_stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.expected_strata_stats.p"),
     params:
         stratify = STRATIFY_BY,
-        polarised = POLARISED,
+        simulate_mutations = True,
     script:
         "scripts/tree_statistics.py"
 
@@ -323,10 +343,10 @@ rule diagnostics:
     """
     input:
         windows = rules.chunk_chromosomes.output.windows,
-        vcf_stats = rules.chunk_chromosomes.output.vcf_stats,
-        vcf_strata_stats = rules.chunk_chromosomes.output.vcf_strata_stats,
-        stats = lambda w: diagnostics_input(w, "stats"),
-        strata_stats = lambda w: diagnostics_input(w, "strata_stats"),
+        expected_stats = lambda w: diagnostics_input(w, "expected_stats"),
+        expected_strata_stats = lambda w: diagnostics_input(w, "expected_strata_stats"),
+        observed_stats = lambda w: diagnostics_input(w, "observed_stats"),
+        observed_strata_stats = lambda w: diagnostics_input(w, "observed_strata_stats"),
     output:
         diversity_scatter = os.path.join(PLOTS_PATH, "diversity-scatter.png"),
         diversity_trace = os.path.join(PLOTS_PATH, "diversity-trace.png"),
@@ -342,7 +362,6 @@ rule diagnostics:
         mcmc_samples = SINGER_MCMC_SAMPLES,
         mcmc_thin = SINGER_MCMC_THIN,
         mcmc_burnin = SINGER_MCMC_BURNIN,
-        polarised = POLARISED,
         stratify = STRATIFY_BY,
         confidence_level = 0.0,
     script:
