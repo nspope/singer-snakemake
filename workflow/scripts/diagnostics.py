@@ -36,34 +36,43 @@ mcmc_iterates = np.arange(num_mcmc) * mcmc_thin
 
 expected_load = []
 expected_diversity = []
+expected_segsites = []
 expected_tajima_d = []
 expected_afs = []
 for i, expected_stats_file in enumerate(snakemake.input.expected_stats):
     expected_stats = pickle.load(open(expected_stats_file, "rb"))
     expected_load.append(expected_stats['load'])
     expected_diversity.append(expected_stats['diversity'])
+    expected_segsites.append(expected_stats['segsites'])
     expected_tajima_d.append(expected_stats['tajima_d'])
     expected_afs.append(expected_stats['afs'])
 expected_load = np.stack(expected_load, axis=-1)
 expected_diversity = np.stack(expected_diversity, axis=-1)
+expected_segsites = np.stack(expected_segsites, axis=-1)
 expected_tajima_d = np.stack(expected_tajima_d, axis=-1)
 expected_afs = np.stack(expected_afs, axis=-1)
 
 repolarised = []
+multimapped = []
 observed_load = []
 observed_diversity = []
+observed_segsites = []
 observed_tajima_d = []
 observed_afs = []
 for i, observed_stats_file in enumerate(snakemake.input.observed_stats):
     observed_stats = pickle.load(open(observed_stats_file, "rb"))
     observed_load.append(observed_stats['load'])
     observed_diversity.append(observed_stats['diversity'])
+    observed_segsites.append(observed_stats['segsites'])
     observed_tajima_d.append(observed_stats['tajima_d'])
     observed_afs.append(observed_stats['afs'])
     repolarised.append(observed_stats['repolarised'])
+    multimapped.append(observed_stats['multimapped'])
+multimapped = np.array(multimapped)
 repolarised = np.array(repolarised)
 observed_load = np.stack(observed_load, axis=-1)
 observed_diversity = np.stack(observed_diversity, axis=-1)
+observed_segsites = np.stack(observed_segsites, axis=-1)
 observed_tajima_d = np.stack(observed_tajima_d, axis=-1)
 observed_afs = np.stack(observed_afs, axis=-1)
 
@@ -71,25 +80,31 @@ observed_afs = np.stack(observed_afs, axis=-1)
 conf_level = snakemake.params.confidence_level
 quantiles = np.array([conf_level / 2, 1 - conf_level / 2])
 
-trace_expected_diversity = np.nanmean(expected_diversity, axis=0)  # NB: not correctly weighting combination, fine for trace
+trace_expected_diversity = np.nanmean(expected_diversity, axis=0)
+trace_expected_segsites = np.nanmean(expected_segsites, axis=0)  
 trace_expected_tajima_d = np.nanmean(expected_tajima_d, axis=0)
 quant_expected_load = np.quantile(expected_load[:, num_burnin:], quantiles, axis=-1)
 quant_expected_diversity = np.nanquantile(expected_diversity[:, num_burnin:], quantiles, axis=-1)
+quant_expected_segsites = np.nanquantile(expected_segsites[:, num_burnin:], quantiles, axis=-1)
 quant_expected_tajima_d = np.nanquantile(expected_tajima_d[:, num_burnin:], quantiles, axis=-1)
 quant_expected_afs = np.quantile(expected_afs[:, num_burnin:], quantiles, axis=-1)
 mean_expected_load = np.mean(expected_load[:, num_burnin:], axis=-1)
 mean_expected_diversity = np.nanmean(expected_diversity[:, num_burnin:], axis=-1)
+mean_expected_segsites = np.nanmean(expected_segsites[:, num_burnin:], axis=-1)
 mean_expected_tajima_d = np.nanmean(expected_tajima_d[:, num_burnin:], axis=-1)
 mean_expected_afs = np.mean(expected_afs[:, num_burnin:], axis=-1)
 
-trace_observed_diversity = np.nanmean(observed_diversity, axis=0)  # NB: not correctly weighting combination, fine for trace
+trace_observed_diversity = np.nanmean(observed_diversity, axis=0)
+trace_observed_segsites = np.nanmean(observed_segsites, axis=0) 
 trace_observed_tajima_d = np.nanmean(observed_tajima_d, axis=0)
 quant_observed_load = np.quantile(observed_load[:, num_burnin:], quantiles, axis=-1)
 quant_observed_diversity = np.nanquantile(observed_diversity[:, num_burnin:], quantiles, axis=-1)
+quant_observed_segsites = np.nanquantile(observed_segsites[:, num_burnin:], quantiles, axis=-1)
 quant_observed_tajima_d = np.nanquantile(observed_tajima_d[:, num_burnin:], quantiles, axis=-1)
 quant_observed_afs = np.quantile(observed_afs[:, num_burnin:], quantiles, axis=-1)
 mean_observed_load = np.mean(observed_load[:, num_burnin:], axis=-1)
 mean_observed_diversity = np.nanmean(observed_diversity[:, num_burnin:], axis=-1)
+mean_observed_segsites = np.nanmean(observed_segsites[:, num_burnin:], axis=-1)
 mean_observed_tajima_d = np.nanmean(observed_tajima_d[:, num_burnin:], axis=-1)
 mean_observed_afs = np.mean(observed_afs[:, num_burnin:], axis=-1)
 
@@ -105,6 +120,19 @@ if snakemake.output.diversity_scatter is not None:
     plt.ylabel("E[diversity] per window")
     plt.tight_layout()
     plt.savefig(snakemake.output.diversity_scatter)
+    plt.clf()
+
+if snakemake.output.segsites_scatter is not None:
+    plt.figure(figsize=(5, 4))
+    plt.scatter(mean_observed_segsites, mean_expected_segsites, c="firebrick", s=8)
+    plt.axline(
+        (np.nanmean(mean_observed_segsites), np.nanmean(mean_observed_segsites)), 
+        slope=1, color='black', linestyle="dashed",
+    )
+    plt.xlabel("Site segsites per window")
+    plt.ylabel("E[segregating sites] per window")
+    plt.tight_layout()
+    plt.savefig(snakemake.output.segsites_scatter)
     plt.clf()
 
 if snakemake.output.tajima_d_scatter is not None:
@@ -126,8 +154,20 @@ if snakemake.output.diversity_trace is not None:
     plt.plot(mcmc_iterates, trace_observed_diversity, "-", c="black", label="observed")
     plt.xlabel("MCMC iteration")
     plt.ylabel("E[diversity]")
+    plt.legend()
     plt.tight_layout()
     plt.savefig(snakemake.output.diversity_trace)
+    plt.clf()
+
+if snakemake.output.segsites_trace is not None:
+    plt.figure(figsize=(5, 4))
+    plt.plot(mcmc_iterates, trace_expected_segsites, "-", c="firebrick", label="expected")
+    plt.plot(mcmc_iterates, trace_observed_segsites, "-", c="black", label="observed")
+    plt.xlabel("MCMC iteration")
+    plt.ylabel("E[segregating sites]")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(snakemake.output.segsites_trace)
     plt.clf()
 
 if snakemake.output.tajima_d_trace is not None:
@@ -136,6 +176,7 @@ if snakemake.output.tajima_d_trace is not None:
     plt.plot(mcmc_iterates, trace_observed_tajima_d, "-", c="black", label="observed")
     plt.xlabel("MCMC iteration")
     plt.ylabel("E[Tajima's D]")
+    plt.legend()
     plt.tight_layout()
     plt.savefig(snakemake.output.tajima_d_trace)
     plt.clf()
@@ -149,12 +190,21 @@ if snakemake.output.repolarised_trace is not None:
     plt.savefig(snakemake.output.repolarised_trace)
     plt.clf()
 
+if snakemake.output.multimapped_trace is not None:
+    plt.figure(figsize=(5, 4))
+    plt.plot(mcmc_iterates, multimapped, "-", c="firebrick")
+    plt.xlabel("MCMC iteration")
+    plt.ylabel("# origins per site")
+    plt.tight_layout()
+    plt.savefig(snakemake.output.multimapped_trace)
+    plt.clf()
+
 if snakemake.output.mutational_load_trace is not None:
     plt.figure(figsize=(5, 4))
-    for i, x in enumerate(observed_load):
-        plt.plot(mcmc_iterates, x, "-", color="black", linewidth=0.5, alpha=0.25)
+    for i, (x, y) in enumerate(zip(observed_load, expected_load)):
+        plt.plot(mcmc_iterates, x / y, "-", color="black", linewidth=0.5, alpha=0.25)
     plt.xlabel("MCMC iteration")
-    plt.ylabel("Derived mutations / base in each sample")
+    plt.ylabel("(# derived / expectation) per sample")
     plt.tight_layout()
     plt.savefig(snakemake.output.mutational_load_trace)
     plt.clf()
@@ -165,10 +215,22 @@ if snakemake.output.diversity_skyline is not None:
     plt.plot(coord, mean_expected_diversity, "-o", c="firebrick", label="expected", markersize=3)
     plt.plot(coord, mean_observed_diversity, "-o", c="black", label="observed", markersize=3)
     plt.xlabel("Position on chromosome")
-    plt.ylabel("Diversity / base")
+    plt.ylabel("Diversity per base")
     plt.legend()
     plt.tight_layout()
     plt.savefig(snakemake.output.diversity_skyline)
+    plt.clf()
+
+if snakemake.output.segsites_skyline is not None:
+    plt.figure(figsize=(8, 4))
+    plt.fill_between(coord, quant_expected_segsites[0], quant_expected_segsites[1], color="firebrick", alpha=0.1)
+    plt.plot(coord, mean_expected_segsites, "-o", c="firebrick", label="expected", markersize=3)
+    plt.plot(coord, mean_observed_segsites, "-o", c="black", label="observed", markersize=3)
+    plt.xlabel("Position on chromosome")
+    plt.ylabel("Segregating sites per base")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(snakemake.output.segsites_skyline)
     plt.clf()
 
 if snakemake.output.tajima_d_skyline is not None:
@@ -191,7 +253,7 @@ if snakemake.output.mutational_load is not None:
     plt.plot(samples, mean_observed_load, "o", color="black", markersize=2)
     plt.vlines(samples, *quant_observed_load, color="black", label="observed")
     plt.xlabel("Sample ID")
-    plt.ylabel("Number of derived mutations / base")
+    plt.ylabel("# derived mutations per base")
     plt.legend()
     plt.tight_layout()
     plt.savefig(snakemake.output.mutational_load)
@@ -205,7 +267,7 @@ if snakemake.output.frequency_spectrum is not None:
     plt.scatter(freq, mean_expected_afs[1:], c="firebrick", label="expected", s=8)
     plt.scatter(freq, mean_observed_afs[1:], c="black", label="observed", s=8)
     plt.xlabel("Derived allele frequency")
-    plt.ylabel("# of variants / base")
+    plt.ylabel("# variants per base")
     plt.yscale("log")
     plt.legend()
     plt.tight_layout()
@@ -305,8 +367,8 @@ if snakemake.params.stratify is not None:
                 k += 1
             else:
                 axs[i, j].set_visible(False)
-    fig.supxlabel("Observed divergence per chunk")
-    fig.supylabel("E[divergence] per chunk")
+    fig.supxlabel("Site divergence per window")
+    fig.supylabel("E[divergence] per window")
     plt.savefig(strata_divergence_scatter)
     plt.clf()
 
@@ -341,7 +403,7 @@ if snakemake.params.stratify is not None:
         axs[i, 0].set_yscale("log")
         axs[i, 0].legend()
     fig.supxlabel("Derived allele frequency")
-    fig.supylabel("# of variants / base")
+    fig.supylabel("# variants per base")
     plt.savefig(strata_afs)
     plt.clf()
     

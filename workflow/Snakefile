@@ -98,10 +98,6 @@ rule all:
             os.path.join(PLOTS_PATH, "diversity-scatter.png"), 
             chrom=CHROMOSOMES,
         ),
-        pair_coalescence_pdf = expand(
-            os.path.join(PLOTS_PATH, "pair-coalescence-pdf.png"), 
-            chrom=CHROMOSOMES,
-        ),
         pair_coalescence_rates = expand(
             os.path.join(PLOTS_PATH, "pair-coalescence-rates.png"), 
             chrom=CHROMOSOMES,
@@ -351,12 +347,16 @@ rule diagnostics:
         diversity_scatter = os.path.join(PLOTS_PATH, "diversity-scatter.png"),
         diversity_trace = os.path.join(PLOTS_PATH, "diversity-trace.png"),
         diversity_skyline = os.path.join(PLOTS_PATH, "diversity-skyline.png"),
+        segsites_scatter = os.path.join(PLOTS_PATH, "segsites-scatter.png"),
+        segsites_trace = os.path.join(PLOTS_PATH, "segsites-trace.png"),
+        segsites_skyline = os.path.join(PLOTS_PATH, "segsites-skyline.png"),
         tajima_d_scatter = os.path.join(PLOTS_PATH, "tajima-d-scatter.png"),
         tajima_d_trace = os.path.join(PLOTS_PATH, "tajima-d-trace.png"),
         tajima_d_skyline = os.path.join(PLOTS_PATH, "tajima-d-skyline.png"),
         mutational_load = os.path.join(PLOTS_PATH, "mutational-load.png"),
         mutational_load_trace = os.path.join(PLOTS_PATH, "mutational-load-trace.png"),
         repolarised_trace = os.path.join(PLOTS_PATH, "repolarised-trace.png"),
+        multimapped_trace = os.path.join(PLOTS_PATH, "multimapped-trace.png"),
         frequency_spectrum = os.path.join(PLOTS_PATH, "frequency-spectrum.png"),
     params:
         mcmc_samples = SINGER_MCMC_SAMPLES,
