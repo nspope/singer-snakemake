@@ -50,8 +50,12 @@ trees = trees.delete_sites(np.flatnonzero(omitted))
 # number of flipped sites (only relevant for observed data)
 repolarised = np.mean([s.metadata["flipped"] for s in trees.sites()])
 
+# count multiple origins
+multimapped = np.mean(np.bincount(trees.mutations_site, minlength=trees.num_sites))
+# TODO: split by input frequency?
+
+# simulate mutations given ARG topology and mask for posterior predictive checks
 if snakemake.params.simulate_mutations:
-    # simulate mutations given ARG topology and mask for posterior predictive checks
     ts = msprime.sim_mutations(
         trees,
         rate=adjusted_mu, 
@@ -61,10 +65,6 @@ if snakemake.params.simulate_mutations:
 else:
     ts = trees
 
-# count multiple origins
-multimapped = np.mean(np.bincount(ts.mutations_site, minlength=ts.num_sites))
-# TODO: split by input frequency?
-
 diversity = ts.diversity(
     mode='site', 
     windows=windows.position, 
@@ -72,6 +72,14 @@ diversity = ts.diversity(
 )
 diversity[windows.rate == 1.0] /= accessible_bp[windows.rate == 1.0]
 diversity[windows.rate == 0.0] = np.nan
+
+segsites = ts.segregating_sites(
+    mode='site', 
+    windows=windows.position, 
+    span_normalise=False,
+)
+segsites[windows.rate == 1.0] /= accessible_bp[windows.rate == 1.0]
+segsites[windows.rate == 0.0] = np.nan
 
 tajima_d = ts.Tajimas_D(
     mode='site', 
@@ -95,6 +103,7 @@ stats = {
     "repolarised": repolarised,
     "multimapped": multimapped,
     "diversity": diversity, 
+    "segsites": segsites,
     "tajima_d": tajima_d, 
     "afs": afs, 
     "load": load,
