@@ -133,7 +133,7 @@ if snakemake.output.diversity_trace is not None:
 if snakemake.output.tajima_d_trace is not None:
     plt.figure(figsize=(5, 4))
     plt.plot(mcmc_iterates, trace_expected_tajima_d, "-", c="firebrick", label="expected")
-    plt.plot(mcmc_iterates, trace_observed_tajima_d, "-", c="observed", label="observed")
+    plt.plot(mcmc_iterates, trace_observed_tajima_d, "-", c="black", label="observed")
     plt.xlabel("MCMC iteration")
     plt.ylabel("E[Tajima's D]")
     plt.tight_layout()
@@ -216,10 +216,11 @@ if snakemake.output.frequency_spectrum is not None:
 # TODO: clean this up
 # stratified summary stats
 if snakemake.params.stratify is not None:
+    strata = pickle.load(open(snakemake.input.expected_strata_stats[0], "rb"))["strata"]
 
     # statistics from MCMC samples of trees
     expected_strata_divergence = []
-    expected_strata_afs = [[] for x in site_strata_afs]
+    expected_strata_afs = [[] for _ in strata]
     for i, stats_file in enumerate(snakemake.input.expected_strata_stats):
         expected_strata_stats = pickle.load(open(stats_file, "rb"))
         assert expected_strata_stats["strata"] == strata
@@ -230,7 +231,7 @@ if snakemake.params.stratify is not None:
     expected_strata_afs = [np.stack(x, axis=-1) for x in expected_strata_afs]
 
     observed_strata_divergence = []
-    observed_strata_afs = [[] for x in site_strata_afs]
+    observed_strata_afs = [[] for _ in strata]
     for i, stats_file in enumerate(snakemake.input.observed_strata_stats):
         observed_strata_stats = pickle.load(open(stats_file, "rb"))
         assert observed_strata_stats["strata"] == strata
