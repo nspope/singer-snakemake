@@ -31,7 +31,7 @@ The input files for each chromosome are:
 
   - __\<chromosome_name>.vcf.gz__ gzip'd VCF that can be used as SINGER input, either diploid and **phased** or haploid with an even number of samples. This should represent an unbiased sample of segregating variation in the population (no ascertainment bias).
   - __\<chromosome_name>.mask.bed__ (optional) bed file containing inaccessible intervals. These are intervals that a priori could not be sequenced reliably. For example, these might be structural variants that are missing in some of the samples. Post-hoc filtered SNPs should go in a separate file, described below.
-  - __\<chromosome_name>.hapmap__ (optional) recombination map in the format described in the documentation for `msprime.RateMap.read_hapmap` (see [here](https://tskit.dev/msprime/docs/stable/api.html#msprime.RateMap.read_hapmap)). Note that the last entry in the hapmap file for each chromosome must extend beyond the last variant in the vcf. If this is not the case, add a new line that extends to the end of the chromosome with rate (cM/Mb) 0 and cM position identical to the previous region.
+  - __\<chromosome_name>.hapmap__ (optional) recombination map in the format described in the documentation for `msprime.RateMap.read_hapmap` (see [here](https://tskit.dev/msprime/docs/stable/api.html#msprime.RateMap.read_hapmap)). Note that the last entry in the hapmap file for each chromosome must extend beyond the last variant in the VCF. If this is not the case, either add a new line that extends to the end of the chromosome with the rate of your choice (cM/Mb) or remove variants that extend past the map (where the recombination rate is unknown).
   - __\<chromosome_name>.meta.csv__ (optional) csv containing metadata for each sample in the VCF, that will be inserted into the output tree sequences. The first row should be the field names, with subsequent rows for every sample in the VCF. The column pointed to by the `stratify-by` argument in the config will be used to fill out population information in the tree sequence.
   - __\<chromosome_name>.filter.txt__ (optional) text file containing 1-based positions of omitted SNPs (one per line). These may be present in the VCF (in which case they are removed by the pipeline) or not (in which case they are still used to calculate an adjustment to mutation rate, see below). For example, these might be SNPs that could not be called accurately in some samples, or where the ancestral state could not be reliably determined. These SNPs will not be used to estimate the ARG, but will be mapped to the ARG, resulting in ages estimates and ancestry calls.
 
@@ -75,58 +75,6 @@ polegon-max-step: 10.0 # step size used in proposal for POLEGON dating
 stats-time-grid: [1, 7, 25]  # [log10 start, log10 stop, number of intervals] for coalescence rates, etc
 stats-window-size: 5.0e4 # size of genomic windows in base pairs for comparing expected vs observed
 ```
-
-### Missing data, mutation rate, and dating ancestors
-
-TODO: this is out-of-date
-
-Missing data must be taken into account for the ages of nodes in the ARG to be
-on the correct timescale. For example, if the sequence has a large amount of
-missingness, an unadjusted molecular clock will result in estimates of node
-(ancestor) ages that are substantially younger than the truth (because fewer
-mutations implies less branch area). Hence, one way to account for missing
-data is to locally adjust the mutation rate.
-
-There are two sorts of missingness that are relevant: inaccessible intervals
-(e.g. highly repetitive regions where variants cannot be called) and filtered
-variants (e.g. "real" variants that are removed for one reason or another, such
-as absence of ancestral state, missing genotypes, etc.). This pipeline
-adjusts the global mutation rate within each chunk, 
-```
-mutation_rate[chunk] = (
-  mutation_rate * 
-  (accessible_sequence_length[chunk] / total_sequence_length[chunk]) * 
-  (retained_variants[chunk] / total_variants[chunk])
-)
-``` 
-where the last term is calculated considering only those variants in accessible
-intervals. 
-
-This sort of crude adjustment works best when bases/variants are missing
-completely at random (e.g. not too clustered along the sequence). For instance,
-the figure below compares the average mutation ages between the true ARG (for
-the data in `example/*`), and inferred ARGs where: (A) there is
-no missing data; (B) around 60% of the sequence is masked in intervals of
-average length 800bp, but the mutation rate is not adjusted; (C) the mutation
-rate is adjusted to account for missing data using the scheme above.
-
-<img src="resources/figures/missing-data-example.png" width="70%" />
-
-In all three cases, expected and observed summary statistics are a good match;
-the problem with (B) is that the bias introduced by missing data has been absorbed 
-into node ages rather than mutation rate.
-An important consequence is that when calculating expectations of (linear) site
-statistics from branch statistics in the ARG (e.g. `mode='site'` and
-`mode='branch'` in ``tskit``'s stats methods), then the contribution from each
-chunk must be weighted by the adjusted mutation rate and then summed across
-chunks to get the correct values. Some examples of this sort of calculation
-can be seen in `workflow/scripts/tree_statistics.py`. The adjusted mutation
-rates are saved as an ``msprime.RateMap`` object (see below).
-
-Similarly, to calculate sequence-wide distributions of coalescence time or
-other topological statistics, the contribution of each chunk should be
-weighted by the proportion of accessible sequence.
-
 
 ### Outputs
 
