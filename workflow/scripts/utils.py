@@ -401,6 +401,12 @@ def adjust_edge_spans_for_partial_ancestry(
         filter_nodes=False, 
         filter_sites=False,
     )
+    # DEBUG
+    print("DEBUG!!! Original span, masked span, intervals sum", (ts.edges_right - ts.edges_left).sum(), 
+        (masked_ts.edges_right - masked_ts.edges_left).sum(), 
+        np.sum([x.sum() for x in intervals_by_sample.values()]),
+        flush=True)
+    # /DEBUG
     # group edges by parent-child combination
     edge_group = lambda p, c: p.astype(np.int64) * ts.num_nodes + c.astype(np.int64)
     # find group start and end for every masked edge
