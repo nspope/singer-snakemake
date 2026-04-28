@@ -308,6 +308,7 @@ def remove_partial_ancestry(
     ts: tskit.TreeSequence,
     intervals_by_sample: dict[int, np.ndarray],
     filter_nodes: bool = True,
+    filter_sites: bool = True,
 ) -> tskit.TreeSequence:
     """
     Remove ancestry given "masked" `intervals_by_sample`, leaving subtrees.
@@ -372,7 +373,11 @@ def remove_partial_ancestry(
     )
     tables.edges.squash()
     tables.sort()
-    tables.simplify(keep_unary=True, filter_nodes=filter_nodes)
+    tables.simplify(
+        keep_unary=True, 
+        filter_nodes=filter_nodes, 
+        filter_sites=filter_sites,
+    )
     tables.build_index()
     tables.compute_mutation_parents()
     return tables.tree_sequence()
@@ -383,13 +388,19 @@ def remove_partial_ancestry(
 def adjust_edge_spans_for_partial_ancestry(
     ts: tskit.TreeSequence,
     intervals_by_sample: dict[int, np.ndarray],
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    coordinate_map: msprime.RateMap = None,
+) -> tuple[np.ndarray, np.ndarray]:
     """
     Apply `remove_partial_ancestry` to the tree sequence, then find the
     surviving genomic span for each edge, and the positions and nodes of
     removed mutations.
     """
-    masked_ts = remove_partial_ancestry(ts, intervals_by_sample, filter_nodes=False)
+    masked_ts = remove_partial_ancestry(
+        ts, 
+        intervals_by_sample, 
+        filter_nodes=False, 
+        filter_sites=False,
+    )
     # group edges by parent-child combination
     edge_group = lambda p, c: p.astype(np.int64) * ts.num_nodes + c.astype(np.int64)
     # find group start and end for every masked edge
@@ -400,9 +411,18 @@ def adjust_edge_spans_for_partial_ancestry(
     masked_right = masked_ts.edges_right[masked_order]
     unique_group, group_start = np.unique(masked_group, return_index=True)
     group_end = np.append(group_start[1:], len(masked_group))
-    # compute overlap with masked edges for each original edge
+    # find group for every original edge
     original_group = edge_group(ts.edges_parent, ts.edges_child)
-    pruned_span = np.zeros(ts.num_edges, dtype=np.float64)
+    original_left = ts.edges_left
+    original_right = ts.edges_right
+    # map to new coordinate system if provided
+    if coordinate_map is not None:
+        masked_left = coordinate_map.get_cumulative_mass(masked_left)
+        masked_right = coordinate_map.get_cumulative_mass(masked_right)
+        original_left = coordinate_map.get_cumulative_mass(original_left)
+        original_right = coordinate_map.get_cumulative_mass(original_right)
+    # compute overlap with masked edges for each original edge
+    retained_span = np.zeros(ts.num_edges, dtype=np.float64)
     for e in ts.edges():
         key = original_group[e.id]
         idx = np.searchsorted(unique_group, key)
@@ -410,29 +430,15 @@ def adjust_edge_spans_for_partial_ancestry(
             continue  # group no longer exists after pruning
         lo, hi = group_start[idx], group_end[idx]
         left, right = masked_left[lo:hi], masked_right[lo:hi]
-        overlap = np.minimum(right, e.right) - np.maximum(left, e.left)
-        pruned_span[e.id] = np.sum(np.maximum(0, overlap))
-
-    # find node and position for removed mutations
-    # TODO: clean up, not sure if this is the best output format. it's not clear to me
-    # that the mutation order will survive conversion from SINGER flat-file to tree sequence
-    # (it probably won't) so the best return might simply be the surviving set.
-    surviving = set()
-    for j in range(masked_ts.num_mutations):
-        pos = float(masked_ts.sites_position[masked_ts.mutations_site[j]])
-        node = int(masked_ts.mutations_node[j])
-        surviving.add((pos, node))
-
-    removed_positions = []
-    removed_nodes = []
-    for j in range(ts.num_mutations):
-        pos = float(ts.sites_position[ts.mutations_site[j]])
-        node = int(ts.mutations_node[j])
-        if (pos, node) not in surviving:
-            removed_positions.append(pos)
-            removed_nodes.append(node)
-    removed_positions = np.array(removed_positions, dtype=np.float64)
-    removed_nodes = np.array(removed_nodes, dtype=np.int32)
-
-    return pruned_span, removed_positions, removed_nodes
+        overlap = np.minimum(right, original_right[e.id]) - \
+            np.maximum(left, original_left[e.id])
+        retained_span[e.id] = np.sum(np.maximum(0, overlap))
+    # mark retained mutations
+    retained_mutations = np.full(ts.num_mutations, False)
+    surviving_mutations = set()
+    for m in masked_ts.mutations():
+        surviving_mutations.add((m.site, m.node))
+    for m in ts.mutations():
+        retained_mutations[m.id] = (m.site, m.node) in surviving_mutations
+    return retained_span, retained_mutations
 
