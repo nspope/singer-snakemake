@@ -219,6 +219,7 @@ rule run_polegon:
         use_mutational_span = config.get("use-mutational-span", True),
         drop_omitted = config.get("drop-omitted", True),
         skip_node_masks = config.get("skip-node-masks", False),
+        remove_polegon_inputs = config.get("remove-polegon-inputs", True),
     log:
         log = os.path.join(CHUNK_PATH, "{id}.{rep}.log"),
     script:

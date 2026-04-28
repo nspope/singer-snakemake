@@ -124,6 +124,7 @@ def mutation_table(ts: tskit.TreeSequence) -> np.ndarray:
 logfile = open(snakemake.log.log, "w")
 use_polegon = snakemake.params.use_polegon
 use_mutational_span = snakemake.params.use_mutational_span
+remove_polegon_inputs = snakemake.params.remove_polegon_inputs
 drop_omitted = snakemake.params.drop_omitted
 skip_node_masks = snakemake.params.skip_node_masks
 node_masks = pickle.load(open(snakemake.input.node_masks, "rb"))
@@ -222,7 +223,8 @@ if use_polegon and not failed_chunk:
     process = subprocess.run(invocation, check=False, stdout=logfile, stderr=logfile)
     logfile.write(f"{tag()} POLEGON run ended ({process.returncode})\n")
 
-    for file in [polegon_nodes, polegon_branches, polegon_muts]: os.remove(file)
+    for file in [polegon_nodes, polegon_branches, polegon_muts]: 
+        if remove_polegon_inputs: os.remove(file)
 
     assert process.returncode == 0, f"POLEGON terminated with error ({process.returncode})"
     os.rename(f"{prefix}_new_nodes.txt", snakemake.output.nodes)
