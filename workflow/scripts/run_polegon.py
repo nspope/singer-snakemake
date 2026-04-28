@@ -360,18 +360,21 @@ elif use_polegon and not failed_chunk:
         adjusted_mu.get_cumulative_mass(treeseq.edges_right) - \
         adjusted_mu.get_cumulative_mass(treeseq.edges_left)
     if node_masks and use_node_masks:
+        print("DEBUG???", np.sum([x.sum() for x in node_masks.values()]), flush=True)
         node_masks = {
             sample: clip_and_shift_intervals(intervals, left, right)
             for sample, intervals in node_masks.items()
         }
+        print("DEBUG+++", np.sum([x.sum() for x in node_masks.values()]), flush=True)
         retained_edge_span, retained_mutations = \
             adjust_edge_spans_for_partial_ancestry(treeseq, node_masks, adjusted_mu)
         logfile.write(f"{tag()} Trimmed tree sequence given per-sample masks:\n")
     else:
         retained_edge_span = original_edge_span
         retained_mutations = np.full(treeseq.num_mutations, True) 
-    logfile.write("{tag()} Removed edge span {(original_edge_span - retained_edge_span).sum()} via sample mask pruning.\n")
-    logfile.write("{tag()} Removed mutations {(~retained_mutations).sum()} via sample mask pruning.\n")
+    trimmed_span = original_edge_span - retained_edge_span
+    logfile.write(f"{tag()} Sample mask pruning removed {trimmed_span.sum()} mutational units from the edge span.\n")
+    logfile.write(f"{tag()} Sample mask pruning removed {(~retained_mutations).sum()} mutations (of {retained_mutations.size}).\n")
 
     # Write out POLEGON inputs
     polegon_nodes = f"{prefix}_nodes.txt"

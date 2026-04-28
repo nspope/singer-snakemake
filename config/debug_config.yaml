@@ -14,10 +14,11 @@ min-gap-size: 1.0e6 # minimum size in base pairs for a masked interval to be con
 max-missing: 0.75 # ignore chunks with more than this proportion of masked sequence or filtered variants
 min-sites: 500 # ignore chunks with fewer than this number of accessible polymorphic sites
 min-branch-length: 1.0e-7 # minimum possible branch length in generations in tree sequence
+max-masked-samples: 10 # maximum number of masked samples
 # --- SINGER options ---
 # FIXME: trimmed order of mag off samples/thin, revert after testing
-singer-mcmc-samples: 10 # number of MCMC samples (each sample is a tree sequence)
-singer-mcmc-thin: 10 # thinning interval between MCMC samples
+singer-mcmc-samples: 100 # number of MCMC samples (each sample is a tree sequence)
+singer-mcmc-thin: 100 # thinning interval between MCMC samples
 singer-mcmc-burnin: 0.5 # proportion of initial samples discarded when computing plots of statistics
 singer-mcmc-resumes: 1000 # maximum number of times to try to resume MCMC on error
 singer-skip-failures: true # treat chunks where MCMC fails as missing
