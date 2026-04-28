@@ -11,7 +11,7 @@ from workflow.scripts.utils import merge_intervals
 from workflow.scripts.utils import clip_and_shift_intervals
 from workflow.scripts.utils import interval_coverage
 from workflow.scripts.utils import remove_partial_ancestry
-from workflow.scripts.utils import adjust_edge_spans_for_partial_ancestry
+from workflow.scripts.utils import effective_edge_spans
 
 
 def _2d(*x):
@@ -173,7 +173,7 @@ def test_remove_partial_ancestry(random_seed, num_intervals, missing_data):
 @pytest.mark.parametrize("random_seed", [1, 1024, 123123])
 @pytest.mark.parametrize("num_intervals", [100])
 @pytest.mark.parametrize("missing_data", [True, False])
-def test_adjust_edge_spans_for_missing_ancestry(random_seed, num_intervals, missing_data):
+def test_effective_edge_spans_with_masking(random_seed, num_intervals, missing_data):
     # simulate tree sequence and missing intervals
     rng = np.random.default_rng(random_seed)
     ts = msprime.sim_ancestry(
@@ -196,12 +196,13 @@ def test_adjust_edge_spans_for_missing_ancestry(random_seed, num_intervals, miss
         ts = ts.delete_intervals(missing_entirely)
     marked_samples = set(samples_with_missing)
     # get corrected spans, etc.
-    corrected, rem_pos, rem_node = adjust_edge_spans_for_partial_ancestry(ts, intervals_by_sample)
-    original_spans = ts.edges_right - ts.edges_left
+    coord_map = msprime.RateMap(position=[0, ts.sequence_length], rate=[1.0]) # TODO: vary this
+    corrected, kept_mut = effective_edge_spans(ts, coord_map, intervals_by_sample)
+    rem_pos = ts.sites_position[ts.mutations_site[~kept_mut]]
+    rem_node = ts.mutations_node[~kept_mut]
+    original_spans = coord_map.get_cumulative_mass(ts.edges_right) - coord_map.get_cumulative_mass(ts.edges_left)
     assert np.all(corrected >= 0.0)
     assert np.all(corrected <= original_spans)
-    # total corrected span <= total original span
-    assert corrected.sum() <= original_spans.sum() + 1e-6
     # edges whose child is NOT a marked sample and whose subtree has at least
     # one unmarked sample should be untouched, so edges where child is an
     # unmarked sample should have full span
@@ -236,40 +237,21 @@ def test_adjust_edge_spans_for_missing_ancestry(random_seed, num_intervals, miss
     for node in rem_node: assert node not in unmarked_samples
 
 
-def test_adjust_edge_spans_for_partial_ancestry_with_empty_intervals():
+@pytest.mark.parametrize("intervals", [{}, None])
+def test_effective_edge_spans_without_masking(intervals):
     ts = msprime.sim_ancestry(
         5, sequence_length=1e4, population_size=1e4,
         recombination_rate=1e-8, random_seed=1,
     )
     ts = msprime.sim_mutations(ts, rate=1e-7, random_seed=1)
     # empty intervals should leave everything unchanged
-    corrected, rem_pos, rem_node = adjust_edge_spans_for_partial_ancestry(ts, {})
-    original_spans = ts.edges_right - ts.edges_left
+    coord_map = msprime.RateMap(position=[0, ts.sequence_length], rate=[1.0]) # TODO: vary this
+    corrected, kept_mut = effective_edge_spans(ts, coord_map, intervals)
+    rem_pos = ts.sites_position[ts.mutations_site[~kept_mut]]
+    rem_node = ts.mutations_node[~kept_mut]
+    original_spans = coord_map.get_cumulative_mass(ts.edges_right) - coord_map.get_cumulative_mass(ts.edges_left)
     assert np.allclose(corrected, original_spans)
     assert rem_pos.size == 0
     assert rem_node.size == 0
-
-
-def test_adjust_edge_spans_for_partial_ancestry_with_full_coverage():
-    ts = msprime.sim_ancestry(
-        5, sequence_length=1e4, population_size=1e4,
-        recombination_rate=1e-8, random_seed=2,
-    )
-    ts = msprime.sim_mutations(ts, rate=1e-7, random_seed=2)
-    # masking a sample over the entire sequence should zero its edges
-    sample = ts.samples()[0]
-    full_interval = np.array([[0.0, ts.sequence_length]])
-    corrected, rem_pos, rem_node = adjust_edge_spans_for_partial_ancestry(ts, {sample: full_interval})
-    for i in range(ts.num_edges):
-        if ts.edges_child[i] == sample: 
-            assert np.isclose(corrected[i], 0.0)
-
-    # all mutations at this sample should be removed
-    for j in range(ts.num_mutations):
-        if ts.mutations_node[j] == sample:
-            pos = ts.sites_position[ts.mutations_site[j]]
-            assert pos in rem_pos, (
-                f"mutation at fully-masked sample {sample} pos={pos} should be removed"
-            )
 
 

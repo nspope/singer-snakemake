@@ -10,14 +10,12 @@ import yaml
 import subprocess
 import numpy as np
 import msprime
-import tszip
 import tskit
 import pickle
 from datetime import datetime
 
 from utils import clip_and_shift_intervals
-from utils import remove_partial_ancestry
-from utils import adjust_edge_spans_for_partial_ancestry
+from utils import effective_edge_spans
 
 # --- lib --- #
 
@@ -102,11 +100,10 @@ def root_table(ts: tskit.TreeSequence) -> np.ndarray:
             left, root = right, next_root
     stems.append([left, ts.sequence_length, tskit.NULL, root])
     stems = np.array(stems).reshape(-1, 4)
-    nonmissing = stems[..., -1] != tskit.NULL
-    return stems[nonmissing]
+    return stems
 
 
-def mutation_table(ts: tskit.TreeSequence) -> tskit.MutationTable:
+def mutation_table(ts: tskit.TreeSequence) -> np.ndarray:
     edges = ts.mutations_edge
     positions = ts.sites_position[ts.mutations_site]
     children = ts.edges_child[edges]
@@ -118,22 +115,7 @@ def mutation_table(ts: tskit.TreeSequence) -> tskit.MutationTable:
         )
     ])
     mut_table = np.stack([positions, children, parents, derived_states], axis=-1)
-    nonmissing = edges != tskit.NULL
-    return mut_table[nonmissing]
-
-
-def write_polegon_inputs(
-    ts: tskit.TreeSequence, 
-    nodes_file: str, 
-    branches_file: str, 
-    mutations_file: str,
-) -> None:
-    edges = ts.tables.edges
-    edge_table = np.stack([edges.left, edges.right, edges.parent, edges.child], axis=-1)
-    edge_table = np.concatenate([edge_table, root_table(ts)], axis=0)
-    np.savetxt(nodes_file, ts.tables.nodes.time)
-    np.savetxt(branches_file, edge_table)
-    np.savetxt(mutations_file, mutation_table(ts))
+    return mut_table
 
 
 
@@ -143,182 +125,16 @@ logfile = open(snakemake.log.log, "w")
 use_polegon = snakemake.params.use_polegon
 use_mutational_span = snakemake.params.use_mutational_span
 drop_omitted = snakemake.params.drop_omitted
-use_node_masks = snakemake.params.use_node_masks
-use_deprecated = snakemake.params.use_deprecated  # TODO: remove when ready
-use_rewrite = False #snakemake.params.use_rewrite  # TODO: remove when ready
+skip_node_masks = snakemake.params.skip_node_masks
 node_masks = pickle.load(open(snakemake.input.node_masks, "rb"))
 failed_chunk = os.path.getsize(snakemake.input.nodes) == 0
 
-if use_deprecated and use_polegon and not failed_chunk:
-    # NOTE: this is the old code path, retained for reference and testing.
-    # FIXME: Remove once convinced this new code path is equivalent sans sample masks.
-
-    singer_params = yaml.safe_load(open(snakemake.input.params)).pop("singer")
-    polegon_params = yaml.safe_load(open(snakemake.input.params)).pop("polegon")
+if use_polegon and not failed_chunk:
+    params_yaml = yaml.safe_load(open(snakemake.input.params))
+    singer_params = params_yaml.pop("singer")
+    polegon_params = params_yaml.pop("polegon")
     seed = polegon_params.pop("seed") + int(snakemake.wildcards.rep)
-
-    # FIXME: Ne is lower by factor of two relative to `polegon_master`.
-    # This shouldn't matter, it cancels during rescaling, but look into it.
-
-    # POLEGON expects inputs named slightly differently than SINGER output
-    prefix = snakemake.input.muts.replace("_muts_", "_").removesuffix(".txt")
-    shutil.copy(snakemake.input.nodes, f"{prefix}_nodes.txt")
-
-    # Adjust mutation list to omit specified sites. These will not be used for
-    # dating, and are effectively inaccessible sequence. However, they were used to
-    # build the topologies and will be retained in the trees.
-    if drop_omitted:
-        # FIXME: for a fully correct clock, the bases occupied by omitted sites
-        # should be subtracted from edge spans-- but if we assume omitted sites
-        # are a very small proportion of edge spans, then the bias should be
-        # minimal.
-        left, right = singer_params["start"], singer_params["end"]
-        omitted_positions = pickle.load(open(snakemake.input.omitted, "rb"))
-        in_bounds = np.logical_and(omitted_positions >= left, omitted_positions < right)
-        omitted_positions = omitted_positions[in_bounds] - left
-        logfile.write(f"{tag()} Read list of {omitted_positions.size} omitted positions\n")
-        mutations = np.loadtxt(snakemake.input.muts)
-        omitted_mutations = np.isin(mutations[:, 0].astype(np.int64), omitted_positions)
-        logfile.write(f"{tag()} Omitting {omitted_mutations.sum()} mutations from dating\n")
-        np.savetxt(f"{prefix}_muts.txt", mutations[~omitted_mutations])
-    else:
-        shutil.copy(snakemake.input.muts, f"{prefix}_muts.txt")
-
-    # Adjust branch spans to reflect masked sequence, and absorb mutation rate
-    # into span.  This is necessary because POLEGON doesn't use the "average
-    # branch mutation rate" from the mutation map during rescaling, and instead
-    # just adjusts by the mean rate. Manually converting the branch spans to
-    # mutational units fixes this.
-    if use_mutational_span:
-        logfile.write(
-            f"{tag()} Adjusting branch spans input ({prefix}_branches.txt) "
-            f"to reflect mutation rate map and setting mutation rate to unity\n"
-        )
-        polegon_params["m"] = 1.0
-        mutation_map = polegon_params.pop("mutation_map")
-        adjusted_mu = np.loadtxt(mutation_map, ndmin=2)
-        assert np.all(adjusted_mu[:-1, 1] == adjusted_mu[1:, 0])
-        adjusted_mu = msprime.RateMap(
-           position=np.append(adjusted_mu[0, 0], adjusted_mu[:, 1]),
-           rate=adjusted_mu[:, 2],
-        )
-        branches = np.loadtxt(snakemake.input.branches)
-        for i in range(2):
-           branches[:, i] = adjusted_mu.get_cumulative_mass(branches[:, i])
-        np.savetxt(f"{prefix}_branches.txt", branches)
-    else:
-        logfile.write(
-            f"{tag()} Using mutation rate map without adjusting branch spans input "
-            f"(for debugging only, will likely produce biased node ages)\n"
-        )
-        shutil.copy(snakemake.input.branches, f"{prefix}_branches.txt")
-
-    invocation = [
-        f"{snakemake.params.polegon_binary}",
-        "-input", f"{prefix}",
-        "-seed", f"{seed}",
-    ]
-    for arg, val in polegon_params.items():
-        invocation += f"-{arg} {val}".split()
-    
-    logfile.write(f"{tag()} " + " ".join(invocation) + "\n")
-    process = subprocess.run(invocation, check=False, stdout=logfile, stderr=logfile)
-    logfile.write(f"{tag()} POLEGON run ended ({process.returncode})\n")
-
-    for suffix in ["muts", "branches", "nodes"]:
-        os.remove(f"{prefix}_{suffix}.txt")
-
-    assert process.returncode == 0, f"POLEGON terminated with error ({process.returncode})"
-    os.rename(f"{prefix}_new_nodes.txt", snakemake.output.nodes)
-elif use_rewrite and use_polegon and not failed_chunk:
-    # This is the new code path before pruning partial ancestry: a major
-    # rewrite. The crucial assumption is that the node table is kept invariant
-    # throughout.
-    singer_params = yaml.safe_load(open(snakemake.input.params)).pop("singer")
-    polegon_params = yaml.safe_load(open(snakemake.input.params)).pop("polegon")
-    seed = polegon_params.pop("seed") + int(snakemake.wildcards.rep)
-    left, right = singer_params["start"], singer_params["end"]
-    prefix = snakemake.input.muts.replace("_muts_", "_").removesuffix(".txt")
-
-    treeseq = singer_to_tree_sequence(
-        snakemake.input.nodes, 
-        snakemake.input.branches, 
-        snakemake.input.muts,
-    )
-    logfile.write(f"{tag()} Read tree sequence from SINGER input:\n{treeseq}\n")
-
-    # Write out POLEGON inputs
-    polegon_nodes = f"{prefix}_nodes.txt"
-    polegon_branches = f"{prefix}_branches.txt"
-    polegon_muts = f"{prefix}_muts.txt"
-    write_polegon_inputs(treeseq, polegon_nodes, polegon_branches, polegon_muts)
-
-    # Adjust mutation list to omit specified sites. These will not be used for
-    # dating, and are effectively inaccessible sequence. However, they were used to
-    # build the topologies and will be retained in the trees.
-    if drop_omitted:
-        # FIXME: for a fully correct clock, the bases occupied by omitted sites
-        # should be subtracted from edge spans-- but if we assume omitted sites
-        # are a very small proportion of edge spans, then the bias should be
-        # minimal.
-        omitted_positions = pickle.load(open(snakemake.input.omitted, "rb"))
-        in_bounds = np.logical_and(omitted_positions >= left, omitted_positions < right)
-        omitted_positions = omitted_positions[in_bounds] - left
-        logfile.write(f"{tag()} Read list of {omitted_positions.size} omitted positions\n")
-        mutations = np.loadtxt(polegon_muts)
-        omitted_mutations = np.isin(mutations[:, 0].astype(np.int64), omitted_positions)
-        logfile.write(f"{tag()} Omitting {omitted_mutations.sum()} mutations from dating\n")
-        np.savetxt(polegon_muts, mutations[~omitted_mutations])
-
-    # Adjust branch spans to reflect masked sequence, and absorb mutation rate
-    # into span.  This is necessary because POLEGON doesn't use the "average
-    # branch mutation rate" from the mutation map during rescaling, and instead
-    # just adjusts by the mean rate. Manually converting the branch spans to
-    # mutational units fixes this.
-    if use_mutational_span:
-        logfile.write(
-            f"{tag()} Adjusting branch spans input ({polegon_branches}) "
-            f"to reflect mutation rate map and setting mutation rate to unity\n"
-        )
-        polegon_params["m"] = 1.0
-        mutation_map = polegon_params.pop("mutation_map")
-        # TODO: it would be easier to load in the mut_rate pickle and clip it
-        adjusted_mu = np.loadtxt(mutation_map, ndmin=2)
-        assert np.all(adjusted_mu[:-1, 1] == adjusted_mu[1:, 0])
-        adjusted_mu = msprime.RateMap(
-           position=np.append(adjusted_mu[0, 0], adjusted_mu[:, 1]),
-           rate=adjusted_mu[:, 2],
-        )
-        branches = np.loadtxt(polegon_branches)
-        for i in range(2):
-           branches[:, i] = adjusted_mu.get_cumulative_mass(branches[:, i])
-        np.savetxt(polegon_branches, branches)
-
-    invocation = [
-        f"{snakemake.params.polegon_binary}",
-        "-input", f"{prefix}",
-        "-seed", f"{seed}",
-    ]
-    for arg, val in polegon_params.items():
-        invocation += f"-{arg} {val}".split()
-    
-    logfile.write(f"{tag()} " + " ".join(invocation) + "\n")
-    process = subprocess.run(invocation, check=False, stdout=logfile, stderr=logfile)
-    logfile.write(f"{tag()} POLEGON run ended ({process.returncode})\n")
-
-    for file in [polegon_nodes, polegon_branches, polegon_muts]: os.remove(file)
-
-    assert process.returncode == 0, f"POLEGON terminated with error ({process.returncode})"
-    os.rename(f"{prefix}_new_nodes.txt", snakemake.output.nodes)
-elif use_polegon and not failed_chunk:
-    # This is the new code path with pruning partial ancestry.  It should give
-    # the same output as the original code path provided no sample masks are
-    # provided. The crucial assumption is that the node table is kept invariant
-    # throughout.
-    singer_params = yaml.safe_load(open(snakemake.input.params)).pop("singer")
-    polegon_params = yaml.safe_load(open(snakemake.input.params)).pop("polegon")
-    seed = polegon_params.pop("seed") + int(snakemake.wildcards.rep)
-    left, right = singer_params["start"], singer_params["end"]
+    start, end = singer_params["start"], singer_params["end"]
     prefix = snakemake.input.muts.replace("_muts_", "_").removesuffix(".txt")
 
     treeseq = singer_to_tree_sequence(
@@ -347,55 +163,17 @@ elif use_polegon and not failed_chunk:
            rate=adjusted_mu[:, 2],
         )
     else:
-        logfile.write(
-            f"{tag()} Using mutation rate map without adjusting branch spans input "
-            f"(for debugging only, will likely produce biased node ages)\n"
-        )
-        adjusted_mu = msprime.RateMap(
-            position=[0, treeseq.sequence_length], 
-            rate=[1.0],
-        )
+        adjusted_mu = msprime.RateMap(position=[0, treeseq.sequence_length], rate=[1.0])
 
-    original_edge_span = \
-        adjusted_mu.get_cumulative_mass(treeseq.edges_right) - \
-        adjusted_mu.get_cumulative_mass(treeseq.edges_left)
-    if node_masks and use_node_masks:
-        print("DEBUG???", np.sum([x.sum() for x in node_masks.values()]), flush=True)
-        node_masks = {
-            sample: clip_and_shift_intervals(intervals, left, right)
-            for sample, intervals in node_masks.items()
-        }
-        print("DEBUG+++", np.sum([x.sum() for x in node_masks.values()]), flush=True)
-        retained_edge_span, retained_mutations = \
-            adjust_edge_spans_for_partial_ancestry(treeseq, node_masks, adjusted_mu)
-        logfile.write(f"{tag()} Trimmed tree sequence given per-sample masks:\n")
-    else:
-        retained_edge_span = original_edge_span
-        retained_mutations = np.full(treeseq.num_mutations, True) 
-    trimmed_span = original_edge_span - retained_edge_span
-    logfile.write(f"{tag()} Sample mask pruning removed {trimmed_span.sum()} mutational units from the edge span.\n")
-    logfile.write(f"{tag()} Sample mask pruning removed {(~retained_mutations).sum()} mutations (of {retained_mutations.size}).\n")
-
-    # Write out POLEGON inputs
-    polegon_nodes = f"{prefix}_nodes.txt"
-    polegon_branches = f"{prefix}_branches.txt"
-    polegon_muts = f"{prefix}_muts.txt"
-    write_polegon_inputs(treeseq, polegon_nodes, polegon_branches, polegon_muts)
-
-    # Adjust branch spans to reflect masked sequence. POLEGON only cares about
-    # position insofar as it impacts edge span. We should never eliminate roots
-    # via sample mask pruning, so these are left untouched.
-    branches = np.loadtxt(polegon_branches)
-    is_root = branches[:, 2] == tskit.NULL
-    branches[:, :2] = adjusted_mu.get_cumulative_mass(branches[:, :2])
-    branches[~is_root, 1] = branches[~is_root, 0] + retained_edge_span
-    np.savetxt(polegon_branches, branches)
-    # FIXME: this is pretty convoluted ... simplify once you figure out what works.
-
-    # Drop mutations to reflect masked sequence.
-    mutations = np.loadtxt(polegon_muts)
-    retained_mutations = retained_mutations[treeseq.mutations_edge != tskit.NULL]  # TODO: move elsewhere
-    np.savetxt(polegon_muts, mutations[retained_mutations])
+    node_masks = None if skip_node_masks else {
+        sample: clip_and_shift_intervals(intervals, start, end)
+        for sample, intervals in node_masks.items()
+    }
+    retained_edge_span, retained_mutations = effective_edge_spans(treeseq, adjusted_mu, node_masks)
+    logfile.write(
+        f"{tag()} Retained {retained_mutations.sum()} of {retained_mutations.size} "
+        f"mutations for after masking\n"
+    )
 
     # Adjust mutation list to omit specified sites. These will not be used for
     # dating, and are effectively inaccessible sequence. However, they were used to
@@ -406,13 +184,31 @@ elif use_polegon and not failed_chunk:
         # are a very small proportion of edge spans, then the bias should be
         # minimal.
         omitted_positions = pickle.load(open(snakemake.input.omitted, "rb"))
-        in_bounds = np.logical_and(omitted_positions >= left, omitted_positions < right)
-        omitted_positions = omitted_positions[in_bounds] - left
-        logfile.write(f"{tag()} Read list of {omitted_positions.size} omitted positions\n")
-        mutations = np.loadtxt(polegon_muts)
-        omitted_mutations = np.isin(mutations[:, 0].astype(np.int64), omitted_positions)
+        in_bounds = np.logical_and(omitted_positions >= start, omitted_positions < end)
+        omitted_positions = omitted_positions[in_bounds] - start
+        omitted_mutations = np.isin(treeseq.sites_position[treeseq.mutations_site], omitted_positions)
         logfile.write(f"{tag()} Omitting {omitted_mutations.sum()} mutations from dating\n")
-        np.savetxt(polegon_muts, mutations[~omitted_mutations])
+        retained_mutations = np.logical_and(retained_mutations, ~omitted_mutations)
+
+    # Assemble POLEGON inputs. POLEGON only cares about edge boundaries insofar
+    # as these impact edge span.
+    retained_mutations = np.logical_and(retained_mutations, treeseq.mutations_edge != tskit.NULL)
+    edge_left = adjusted_mu.get_cumulative_mass(treeseq.edges_left)
+    edge_right = edge_left + retained_edge_span
+    edge_table = np.column_stack([edge_left, edge_right, treeseq.edges_parent, treeseq.edges_child])
+    root_stems = root_table(treeseq)
+    root_stems[:, :2] = adjusted_mu.get_cumulative_mass(root_stems[:, :2])
+    root_stems = root_stems[root_stems[..., -1] != tskit.NULL]
+    branches = np.concatenate([edge_table, root_stems], axis=0)
+    mutations = mutation_table(treeseq)[retained_mutations]
+    nodes = treeseq.nodes_time
+
+    polegon_nodes = f"{prefix}_nodes.txt"
+    polegon_branches = f"{prefix}_branches.txt"
+    polegon_muts = f"{prefix}_muts.txt"
+    np.savetxt(polegon_nodes, nodes)
+    np.savetxt(polegon_branches, branches)
+    np.savetxt(polegon_muts, mutations)
 
     invocation = [
         f"{snakemake.params.polegon_binary}",
