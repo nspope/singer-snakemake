@@ -163,6 +163,10 @@ if use_polegon and not failed_chunk:
            position=np.append(adjusted_mu[0, 0], adjusted_mu[:, 1]),
            rate=adjusted_mu[:, 2],
         )
+        adjusted_mu2 = \
+            pickle.load(open(snakemake.input.mut_rate, "rb")).slice(start, end, trim=True)
+        np.testing.assert_allclose(adjusted_mu.position, adjusted_mu2.position, atol=1e-16)
+        np.testing.assert_allclose(adjusted_mu.rate, adjusted_mu2.rate, atol=1e-16)
     else:
         adjusted_mu = msprime.RateMap(position=[0, treeseq.sequence_length], rate=[1.0])
 
@@ -170,10 +174,11 @@ if use_polegon and not failed_chunk:
         sample: clip_and_shift_intervals(intervals, start, end)
         for sample, intervals in node_masks.items()
     }
+    assert np.all(adjusted_mu.get_rate(treeseq.sites_position) > 0)
     retained_edge_span, retained_mutations = effective_edge_spans(treeseq, adjusted_mu, node_masks)
     logfile.write(
         f"{tag()} Retained {retained_mutations.sum()} of {retained_mutations.size} "
-        f"mutations for after masking\n"
+        f"mutations after sample masking\n"
     )
 
     # Adjust mutation list to omit specified sites. These will not be used for
@@ -203,6 +208,10 @@ if use_polegon and not failed_chunk:
     branches = np.concatenate([edge_table, root_stems], axis=0)
     mutations = mutation_table(treeseq)[retained_mutations]
     nodes = treeseq.nodes_time
+    logfile.write(
+        f"{tag()} POLEGON input dimensions: {nodes.size} nodes, {mutations.shape[0]} mutations, "
+        f"{edge_table.shape[0]} edges, {root_stems.shape[0]} roots\n"
+    )
 
     polegon_nodes = f"{prefix}_nodes.txt"
     polegon_branches = f"{prefix}_branches.txt"

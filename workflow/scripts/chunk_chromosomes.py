@@ -7,13 +7,13 @@ Part of https://github.com/nspope/singer-snakemake.
 import csv
 import os
 import gzip
-import msprime
 import numpy as np
 import allel
 import matplotlib.pyplot as plt
 import yaml
 import pickle
 import warnings
+from msprime import RateMap
 from collections import defaultdict
 from datetime import datetime
 from numpy.dtypes import StringDType
@@ -44,6 +44,18 @@ def swap_binary_alleles(genotypes: np.ndarray) -> np.ndarray:
     return swapped_genotypes
 
 
+def one_shift_ratemap(ratemap: RateMap, *, offset_rate: float = 0.0) -> RateMap:
+    """
+    Convert a zero-based `ratemap` to one-based by inserting a
+    "zero-coordinate" at the start.  The rate at this initial coordinate is
+    `offset_rate`.
+    """
+    return RateMap(
+        position=np.append(0.0, ratemap.position + 1),
+        rate=np.append(offset_rate, ratemap.rate),
+    )
+
+
 # --- implm --- #
 
 logfile = open(snakemake.log.log, "w")
@@ -62,6 +74,11 @@ variant_chrom = vcf['variants/CHROM'].astype(StringDType)
 calldata = vcf['calldata/GT'].astype(np.int8)
 sequence_length = None
 logfile.write(f"{tag()} Read {positions.size} variants and {samples.size} samples from {vcf_file}\n")
+
+# FIXME: the sequence length handling is weird/inconsistent.  I think the best
+# thing to do is always use last variant position + 1 as the sequence length,
+# trim other stuff silently if it extends past this, and fail loudly if it's
+# too short and we need a value.
 
 
 # ancestral states
@@ -100,12 +117,12 @@ if not os.path.exists(hapmap_file):
     )
     if sequence_length is None:
         sequence_length = positions.max() + 1
-    hapmap = msprime.RateMap(
+    hapmap = RateMap(
         position=np.array([0.0, sequence_length]),
         rate=np.array([recombination_rate]),
     )
 else:
-    hapmap = msprime.RateMap.read_hapmap(hapmap_file)
+    hapmap = RateMap.read_hapmap(hapmap_file)
     if sequence_length is None:
         sequence_length = int(hapmap.sequence_length)
         assert sequence_length >= positions.max(), \
@@ -567,28 +584,15 @@ adj_mu = (1 - prop_inaccessible) * (1 - prop_filtered) * mutation_rate
 
 
 # dump recombination rates, adjusted mutation rates, proportion inaccessible,
-# proportion filtered, and chunk boundaries as RateMaps
-adjusted_mu = msprime.RateMap(
-    position=np.array(breakpoints),
-    rate=np.array(adj_mu),
-)
-inaccessible = msprime.RateMap(
-    position=np.array(breakpoints),
-    rate=np.array(prop_inaccessible),
-)
-filtered = msprime.RateMap(
-    position=np.array(breakpoints), 
-    rate=np.array(prop_filtered),
-)
-chunks = msprime.RateMap(
-    position=np.array(windows), 
-    rate=filter_chunks.astype(float),
-)
-filter_windows = np.diff(adjusted_mu.get_cumulative_mass(statistics_windows)) > 0
-stats_windows = msprime.RateMap(
-    position=np.array(statistics_windows),
-    rate=filter_windows.astype(float),
-)
+# proportion filtered, and chunk boundaries as RateMaps.
+hapmap = one_shift_ratemap(hapmap, offset_rate=np.nan)
+adjusted_mu = one_shift_ratemap(RateMap(position=breakpoints, rate=adj_mu))
+inaccessible = one_shift_ratemap(RateMap(position=breakpoints, rate=prop_inaccessible), offset_rate=1.0)
+filtered = one_shift_ratemap(RateMap(position=breakpoints, rate=prop_filtered))
+chunks = one_shift_ratemap(RateMap(position=windows, rate=filter_chunks.astype(float)))
+filter_windows = np.diff(adjusted_mu.get_cumulative_mass(statistics_windows + 1)) > 0
+stats_windows = one_shift_ratemap(RateMap(position=statistics_windows, rate=filter_windows.astype(float)))
+assert np.all(adjusted_mu.get_rate(positions) > 0)
 pickle.dump(hapmap, open(snakemake.output.recomb_rate, "wb"))
 pickle.dump(adjusted_mu, open(snakemake.output.mut_rate, "wb"))
 pickle.dump(inaccessible, open(snakemake.output.inaccessible, "wb"))
@@ -596,6 +600,9 @@ pickle.dump(filtered, open(snakemake.output.filtered, "wb"))
 pickle.dump(chunks, open(snakemake.output.chunks, "wb"))
 pickle.dump(stats_windows, open(snakemake.output.windows, "wb"))
 pickle.dump(omitted_positions, open(snakemake.output.omitted, "wb"))
+# NOTE: all RateMaps are shifted to a one-based coordinate system, so that
+# ratemap.get_rate(variant_positions) is accurate.
+
 
 # FIXME: there is a bug in SINGER where fine-scale rate maps are never used
 # and the mean rate is used instead. When this is fixed, explore using
@@ -608,7 +615,7 @@ os.makedirs(f"{chunks_dir}", exist_ok=True)
 seeds = rng.integers(0, 2 ** 10, size=(filter_chunks.size, 2))
 vcf_prefix = snakemake.output.vcf.removesuffix(".vcf")
 for i in np.flatnonzero(filter_chunks):
-    start, end = windows[i], windows[i + 1]
+    start, end = windows[i] + 1, windows[i + 1] + 1  # one-based coordinates
     polar = 0.99 if snakemake.params.polarised else 0.5
     id = f"{i:>06}"
     # SINGER truncates coordinates of SNPs, so adjust maps accordingly
@@ -691,6 +698,7 @@ pickle.dump(metadata, open(snakemake.output.metadata, "wb"))
 
 
 # write out per haplotype masks
+nodemask = {i: 1 + x for i, x in nodemask.items()}  # one-based coordinates
 pickle.dump(nodemask, open(snakemake.output.node_masks, "wb"))
 
 
