@@ -645,7 +645,6 @@ for i in np.flatnonzero(filter_chunks):
     }
     polegon_params = {
         "Ne": float(Ne),
-        "mutation_map": str(mutation_map_path),
         "num_samples": int(snakemake.params.polegon_mcmc_samples),
         "burn_in": int(snakemake.params.polegon_mcmc_burnin),
         "thin": int(snakemake.params.polegon_mcmc_thin),

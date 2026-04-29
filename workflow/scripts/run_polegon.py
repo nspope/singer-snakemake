@@ -128,6 +128,7 @@ remove_polegon_inputs = snakemake.params.remove_polegon_inputs
 drop_omitted = snakemake.params.drop_omitted
 skip_node_masks = snakemake.params.skip_node_masks
 node_masks = pickle.load(open(snakemake.input.node_masks, "rb"))
+mut_rate = pickle.load(open(snakemake.input.mut_rate, "rb"))
 failed_chunk = os.path.getsize(snakemake.input.nodes) == 0
 
 if use_polegon and not failed_chunk:
@@ -155,18 +156,7 @@ if use_polegon and not failed_chunk:
             f"and setting mutation rate to unity\n"
         )
         polegon_params["m"] = 1.0
-        mutation_map = polegon_params.pop("mutation_map")
-        # TODO: it would be easier to load in the mut_rate pickle and clip it
-        adjusted_mu = np.loadtxt(mutation_map, ndmin=2)
-        assert np.all(adjusted_mu[:-1, 1] == adjusted_mu[1:, 0])
-        adjusted_mu = msprime.RateMap(
-           position=np.append(adjusted_mu[0, 0], adjusted_mu[:, 1]),
-           rate=adjusted_mu[:, 2],
-        )
-        adjusted_mu2 = \
-            pickle.load(open(snakemake.input.mut_rate, "rb")).slice(start, end, trim=True)
-        np.testing.assert_allclose(adjusted_mu.position, adjusted_mu2.position, atol=1e-16)
-        np.testing.assert_allclose(adjusted_mu.rate, adjusted_mu2.rate, atol=1e-16)
+        adjusted_mu = mut_rate.slice(start, end, trim=True)
     else:
         adjusted_mu = msprime.RateMap(position=[0, treeseq.sequence_length], rate=[1.0])
 
