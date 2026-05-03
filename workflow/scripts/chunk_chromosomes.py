@@ -7,13 +7,13 @@ Part of https://github.com/nspope/singer-snakemake.
 import csv
 import os
 import gzip
-import msprime
 import numpy as np
 import allel
 import matplotlib.pyplot as plt
 import yaml
 import pickle
 import warnings
+from msprime import RateMap
 from collections import defaultdict
 from datetime import datetime
 from numpy.dtypes import StringDType
@@ -24,12 +24,36 @@ from utils import bitmask_to_arrays
 from utils import ratemap_to_text
 from utils import read_single_fasta
 from utils import write_minimal_vcf
+from utils import parse_sample_bedmask
+from utils import interval_coverage
 
 
 # --- lib --- #
 
 def tag(): 
     return f"[singer-snakemake::{snakemake.rule}::{str(datetime.now())}]"
+
+
+def swap_binary_alleles(genotypes: np.ndarray) -> np.ndarray:
+    """
+    Swap zeros with ones in `genotypes`, leaving other values untouched.
+    """
+    swapped_genotypes = genotypes.copy()
+    to_swap = np.logical_or(swapped_genotypes == 0, swapped_genotypes == 1)
+    swapped_genotypes[to_swap] = 1 - swapped_genotypes[to_swap]
+    return swapped_genotypes
+
+
+def one_shift_ratemap(ratemap: RateMap, *, offset_rate: float = 0.0) -> RateMap:
+    """
+    Convert a zero-based `ratemap` to one-based by inserting a
+    "zero-coordinate" at the start.  The rate at this initial coordinate is
+    `offset_rate`.
+    """
+    return RateMap(
+        position=np.append(0.0, ratemap.position + 1),
+        rate=np.append(offset_rate, ratemap.rate),
+    )
 
 
 # --- implm --- #
@@ -50,6 +74,11 @@ variant_chrom = vcf['variants/CHROM'].astype(StringDType)
 calldata = vcf['calldata/GT'].astype(np.int8)
 sequence_length = None
 logfile.write(f"{tag()} Read {positions.size} variants and {samples.size} samples from {vcf_file}\n")
+
+# FIXME: the sequence length handling is weird/inconsistent.  I think the best
+# thing to do is always use last variant position + 1 as the sequence length,
+# trim other stuff silently if it extends past this, and fail loudly if it's
+# too short and we need a value.
 
 
 # ancestral states
@@ -88,12 +117,12 @@ if not os.path.exists(hapmap_file):
     )
     if sequence_length is None:
         sequence_length = positions.max() + 1
-    hapmap = msprime.RateMap(
+    hapmap = RateMap(
         position=np.array([0.0, sequence_length]),
         rate=np.array([recombination_rate]),
     )
 else:
-    hapmap = msprime.RateMap.read_hapmap(hapmap_file)
+    hapmap = RateMap.read_hapmap(hapmap_file)
     if sequence_length is None:
         sequence_length = int(hapmap.sequence_length)
         assert sequence_length >= positions.max(), \
@@ -173,7 +202,32 @@ else:
             f"'{stratify}' that isn't in the metadata"
 
 
+# per-sample masked intervals
+sample_mask_file = vcf_file.replace(".vcf.gz", ".sample.mask.bed")
+if not os.path.exists(sample_mask_file):
+    logfile.write(f"{tag()} Did not find {sample_mask_file}, assuming all samples are equally accessible\n")
+    samplemask = {}
+else:
+    sample_map = {name: i for i, name in enumerate(samples)}
+    samplemask = parse_sample_bedmask(sample_mask_file, sample_map)
+    logfile.write(f"{tag()} Parsed {len(samplemask)} per-sample interval masks\n")
+if samplemask:
+    # NOTE: filtering is on the basis of VCF samples, not haplotypes, so depends on ploidy
+    samplemask_intervals, samplemask_coverage = interval_coverage(samplemask)
+    max_masked_samples = snakemake.params.max_masked_samples
+    # TODO: convert intervals to int in `interval_coverage` and document
+    samplemask_inaccessible = samplemask_intervals[samplemask_coverage > max_masked_samples]
+    logfile.write(
+        f"{tag()} Dropping {samplemask_inaccessible.shape[0]} intervals "
+        f"({np.diff(samplemask_inaccessible, axis=1).sum()} bp) "
+        f"with more than {max_masked_samples} missing samples\n"
+    )
+    for (a, b) in samplemask_inaccessible: bitmask[a:b] = True
+
+
 # convert to diploid VCF if necessary
+# FIXME: SINGER 0.1.9 supports haploid input, switch over
+nodemask = {}
 assert calldata.shape[2] == 2
 ploidy = 1 if np.all(calldata[..., 1] == -1) else 2
 if ploidy == 1:
@@ -181,6 +235,41 @@ if ploidy == 1:
     assert samples.size % 2 == 0, "VCF is haploid with an odd number of samples: cannot diploidize"
     samples = np.array([f"{a}_{b}" for a, b in zip(samples[::2], samples[1::2])], dtype=StringDType)
     calldata = calldata[..., 0].reshape(-1, samples.size, 2)
+    if samplemask:
+        logfile.write(f"{tag()} VCF is diploidized, keeping one sample mask per haplotype\n")
+        for i in samplemask:
+            nodemask[i] = samplemask[i]
+else:
+    if samplemask:
+        logfile.write(f"{tag()} VCF is diploid, duplicating sample masks across haplotypes\n")
+        for i in samplemask:
+            nodemask[2 * i] = samplemask[i]
+            nodemask[2 * i + 1] = samplemask[i]
+
+
+# frequency imputation over per-sample masks: 
+if snakemake.params.impute_sample_masks and nodemask:
+    # FIXME: using a bitmask here is inefficient but transparent
+    to_impute = {}
+    for i, intervals in nodemask.items():
+        sample_bitmask = np.full(bitmask.size, False)
+        for (a, b) in intervals: sample_bitmask[a:b] = True
+        to_impute[i] = np.flatnonzero(sample_bitmask[positions - 1])
+        calldata[to_impute[i], i // 2, i % 2] = -1
+        logfile.write(f"{tag()} Imputing {to_impute[i].size} variants in sample mask for haplotype {i}\n")
+
+    imputation_counts = allel.GenotypeArray(calldata).count_alleles(max_allele=1)
+    total_counts = imputation_counts.sum(axis=1)
+    allele_frequency = np.where(total_counts > 0, imputation_counts[:, 1] / total_counts, 0.0)
+    for i in nodemask:
+        imputations = rng.binomial(1, allele_frequency[to_impute[i]])
+        calldata[to_impute[i], i // 2, i % 2] = imputations
+# NOTE: if imputation is disabled, then whatever the genotypes are on input will be
+# processed as usual. That is, if the genotypes are coded as missing they will
+# be dropped, and if they are coded as nonmissing then they will be used by
+# SINGER. This allows passing forwards a more complex imputation if desired.
+# Regardless, the per-sample masked intervals will be pruned from the ARG
+# prior to dating.
 
 
 # polarise alleles
@@ -188,7 +277,7 @@ has_ancestral_state = np.logical_or(ref_allele == anc_allele, alt_allele == anc_
 has_binary_state = calldata.max(axis=(-2, -1)) == 1
 polarised = np.logical_and.reduce([has_ancestral_state, has_binary_state, anc_allele != 'N', anc_allele != '-'])
 flip_alleles = np.logical_and(polarised, alt_allele == anc_allele)
-calldata[flip_alleles] = 1 - calldata[flip_alleles]
+calldata[flip_alleles] = swap_binary_alleles(calldata[flip_alleles])
 ref_allele[flip_alleles], alt_allele[flip_alleles] = \
     alt_allele[flip_alleles], ref_allele[flip_alleles]
 logfile.write(
@@ -204,7 +293,7 @@ assert np.max(positions) <= hapmap.sequence_length, "VCF position exceeds hapmap
 counts = genotypes.count_alleles()
 filter_segregating = counts.is_segregating()
 logfile.write(f"{tag()} Removed {np.sum(~filter_segregating)} non-segregating sites\n")
-filter_biallelic = has_binary_state
+filter_biallelic = counts[:, 2:].sum(axis=1) == 0
 logfile.write(f"{tag()} Removed {np.sum(~filter_biallelic)} non-biallelic sites\n")
 filter_nonmissing = counts.sum(axis=1) == 2 * samples.size
 logfile.write(f"{tag()} Removed {np.sum(~filter_nonmissing)} sites with missing data\n")
@@ -219,7 +308,7 @@ if snakemake.params.polarised and snakemake.params.remove_unpolarised:
 retain = np.logical_and.reduce([
     filter_segregating, 
     filter_biallelic, 
-    filter_nonmissing, 
+    filter_nonmissing,
     filter_accessible,
     filter_unmasked,
     filter_polarised,
@@ -281,7 +370,7 @@ logfile.write(
     f"(excluding flanks outside of variant positions) that delimit {windows.size - 1} "
     f"regions\n"
 )
-# TODO: log message is confusing as "regions" includes both unmasked and masked
+# FIXME: log message is confusing as "regions" includes both unmasked and masked
 windows_refined = [0.0]
 for (a, b) in zip(windows[:-1], windows[1:]):
     assert a == windows_refined[-1]
@@ -451,22 +540,6 @@ logfile.write(
 )
 counts = genotypes.count_alleles(max_allele=1)
 assert counts.shape[1] == 2
-diversity, *_ = allel.windowed_diversity(
-    positions[statkeep],
-    counts[statkeep],
-    windows=statistics_windows_stack,
-    is_accessible=statmask,
-    fill=0.0,
-)
-tajima_d, *_ = allel.windowed_tajima_d(
-    positions[statkeep],
-    counts[statkeep],
-    windows=statistics_windows_stack,
-)
-if snakemake.params.polarised:
-    afs = allel.sfs(counts[statkeep, 1], n=2 * samples.size) / np.sum(statmask) 
-else:
-    afs = allel.sfs_folded(counts[statkeep], n=2 * samples.size) / np.sum(statmask)
 adjustment = sum(num_retained) / sum(num_retained + num_filtered)
 Ne = (
     allel.sequence_diversity(positions[statkeep], counts[statkeep], is_accessible=statmask) *
@@ -511,28 +584,15 @@ adj_mu = (1 - prop_inaccessible) * (1 - prop_filtered) * mutation_rate
 
 
 # dump recombination rates, adjusted mutation rates, proportion inaccessible,
-# proportion filtered, and chunk boundaries as RateMaps
-adjusted_mu = msprime.RateMap(
-    position=np.array(breakpoints),
-    rate=np.array(adj_mu),
-)
-inaccessible = msprime.RateMap(
-    position=np.array(breakpoints),
-    rate=np.array(prop_inaccessible),
-)
-filtered = msprime.RateMap(
-    position=np.array(breakpoints), 
-    rate=np.array(prop_filtered),
-)
-chunks = msprime.RateMap(
-    position=np.array(windows), 
-    rate=filter_chunks.astype(float),
-)
-filter_windows = np.diff(adjusted_mu.get_cumulative_mass(statistics_windows)) > 0
-stats_windows = msprime.RateMap(
-    position=np.array(statistics_windows),
-    rate=filter_windows.astype(float),
-)
+# proportion filtered, and chunk boundaries as RateMaps.
+hapmap = one_shift_ratemap(hapmap, offset_rate=np.nan)
+adjusted_mu = one_shift_ratemap(RateMap(position=breakpoints, rate=adj_mu))
+inaccessible = one_shift_ratemap(RateMap(position=breakpoints, rate=prop_inaccessible), offset_rate=1.0)
+filtered = one_shift_ratemap(RateMap(position=breakpoints, rate=prop_filtered))
+chunks = one_shift_ratemap(RateMap(position=windows, rate=filter_chunks.astype(float)))
+filter_windows = np.diff(adjusted_mu.get_cumulative_mass(statistics_windows + 1)) > 0
+stats_windows = one_shift_ratemap(RateMap(position=statistics_windows, rate=filter_windows.astype(float)))
+assert np.all(adjusted_mu.get_rate(positions) > 0)
 pickle.dump(hapmap, open(snakemake.output.recomb_rate, "wb"))
 pickle.dump(adjusted_mu, open(snakemake.output.mut_rate, "wb"))
 pickle.dump(inaccessible, open(snakemake.output.inaccessible, "wb"))
@@ -540,6 +600,9 @@ pickle.dump(filtered, open(snakemake.output.filtered, "wb"))
 pickle.dump(chunks, open(snakemake.output.chunks, "wb"))
 pickle.dump(stats_windows, open(snakemake.output.windows, "wb"))
 pickle.dump(omitted_positions, open(snakemake.output.omitted, "wb"))
+# NOTE: all RateMaps are shifted to a one-based coordinate system, so that
+# ratemap.get_rate(variant_positions) is accurate.
+
 
 # FIXME: there is a bug in SINGER where fine-scale rate maps are never used
 # and the mean rate is used instead. When this is fixed, explore using
@@ -552,7 +615,7 @@ os.makedirs(f"{chunks_dir}", exist_ok=True)
 seeds = rng.integers(0, 2 ** 10, size=(filter_chunks.size, 2))
 vcf_prefix = snakemake.output.vcf.removesuffix(".vcf")
 for i in np.flatnonzero(filter_chunks):
-    start, end = windows[i], windows[i + 1]
+    start, end = windows[i] + 1, windows[i + 1] + 1  # one-based coordinates
     polar = 0.99 if snakemake.params.polarised else 0.5
     id = f"{i:>06}"
     # SINGER truncates coordinates of SNPs, so adjust maps accordingly
@@ -582,7 +645,6 @@ for i in np.flatnonzero(filter_chunks):
     }
     polegon_params = {
         "Ne": float(Ne),
-        "mutation_map": str(mutation_map_path),
         "num_samples": int(snakemake.params.polegon_mcmc_samples),
         "burn_in": int(snakemake.params.polegon_mcmc_burnin),
         "thin": int(snakemake.params.polegon_mcmc_thin),
@@ -603,6 +665,7 @@ for i in np.flatnonzero(filter_chunks):
 
 # if unpolarised, randomly flip reference and alternate
 if snakemake.params.random_polarisation:
+    assert calldata.min() == 0 and calldata.max() == 1
     flip_alleles = np.full(polarised.size, False)
     flip_alleles[~polarised] = rng.binomial(1, 0.5, size=np.sum(~polarised))
     logfile.write(
@@ -611,7 +674,7 @@ if snakemake.params.random_polarisation:
     )
     ref_allele[flip_alleles], alt_allele[flip_alleles] = \
         alt_allele[flip_alleles], ref_allele[flip_alleles]
-    calldata[flip_alleles] = 1 - calldata[flip_alleles]
+    calldata[flip_alleles] = swap_binary_alleles(calldata[flip_alleles])
 
 
 # write out polarisation probabilities
@@ -620,14 +683,6 @@ if snakemake.params.polarised:
 else:
     polarisation = np.stack([positions[polarised], np.full(np.sum(polarised), 0.99)], axis=-1)
 np.savetxt(snakemake.output.polarisation, polarisation)
-
-
-# write out filtered vcf
-write_minimal_vcf(
-    open(snakemake.output.vcf, "w"),
-    samples, variant_chrom, positions, variant_id,
-    ref_allele, alt_allele, calldata,
-)
 
 
 # write out reference and alternate allele per position
@@ -641,68 +696,14 @@ pickle.dump(
 pickle.dump(metadata, open(snakemake.output.metadata, "wb"))
 
 
-# write out windowed statistics
-diversity[~filter_windows] = np.nan
-tajima_d[~filter_windows] = np.nan
-vcf_stats = {
-    "diversity": diversity, 
-    "tajima_d": tajima_d, 
-    "afs": afs, 
-}
-pickle.dump(vcf_stats, open(snakemake.output.vcf_stats, "wb"))
+# write out per haplotype masks
+nodemask = {i: 1 + x for i, x in nodemask.items()}  # one-based coordinates
+pickle.dump(nodemask, open(snakemake.output.node_masks, "wb"))
 
 
-# calculate stratified statistics
-vcf_strata_stats = {}
-if stratify is not None:
-
-    sample_sets = defaultdict(list)
-    for i, md in enumerate(metadata):
-        sample_sets[md[stratify]].append(i)
-    strata = sorted([n for n in sample_sets.keys()])
-
-    # if data are haploid, then calldata has been artificially diploidized,
-    # and genotypes have to be expanded out to correctly assign individuals
-    # to subpopulations
-    if ploidy == 1:
-        haploid_calldata = calldata.reshape(-1, len(metadata))
-        haploid_calldata = np.stack([haploid_calldata, np.full_like(haploid_calldata, -1)], axis=-1)
-        haploid_genotypes = allel.GenotypeArray(haploid_calldata)
-        strata_counts = haploid_genotypes.count_alleles_subpops(sample_sets, max_allele=1)
-    else:
-        strata_counts = genotypes.count_alleles_subpops(sample_sets, max_allele=1)
-
-    strata_divergence = []
-    strata_afs = []
-    for i in range(len(strata)):
-        for j in range(i, len(strata)):
-            divergence, *_ = allel.windowed_divergence(
-                positions[statkeep],
-                strata_counts[strata[i]][statkeep],
-                strata_counts[strata[j]][statkeep],
-                windows=statistics_windows_stack,
-                is_accessible=statmask,
-                fill=0.0,
-            )
-            divergence[~filter_windows] = np.nan
-            strata_divergence.append(divergence)
-
-        if snakemake.params.polarised:
-            afs = allel.sfs(
-                strata_counts[strata[i]][statkeep, 1], 
-                n=ploidy * len(sample_sets[strata[i]]),
-            ) / np.sum(statmask)
-        else:
-            afs = allel.sfs_folded(
-                strata_counts[strata[i]][statkeep], 
-                n=ploidy * len(sample_sets[strata[i]]),
-            ) / np.sum(statmask)
-        strata_afs.append(afs)
-
-    strata_divergence = np.stack(strata_divergence).T
-    vcf_strata_stats = {
-        "strata": strata,
-        "divergence": strata_divergence,
-        "afs": strata_afs,
-    }
-pickle.dump(vcf_strata_stats, open(snakemake.output.vcf_strata_stats, "wb"))
+# write out filtered vcf
+write_minimal_vcf(
+    open(snakemake.output.vcf, "w"),
+    samples, variant_chrom, positions, variant_id,
+    ref_allele, alt_allele, calldata,
+)

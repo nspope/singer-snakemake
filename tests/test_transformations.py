@@ -123,11 +123,10 @@ def test_major_allele_repolarisation():
     assert np.all(geno.sum(axis=-1) / ts.num_samples <= 0.5)
 
 
-# TODO: test reference polarisation, frequency polarisation
-# (or remove these options as not useful)
-
-
 def test_find_genealogical_gaps_by_example():
+    """
+    Test finding gaps across which no edges cross, on a worked example
+    """
     ts = example_ts()
     # example-specific "yes" intervals
     is_gap = np.array([False, True, False])
@@ -225,8 +224,10 @@ def test_find_genealogical_gaps_by_example():
     )
 
 
-#@pytest.mark.skip
 def test_find_genealogical_gaps_by_simulation():
+    """
+    Test finding gaps across which no edges cross, by shotgun simulation
+    """
     ts_gen = msprime.sim_ancestry(
         samples=10, 
         sequence_length=1e6, 
@@ -255,6 +256,10 @@ def test_find_genealogical_gaps_by_simulation():
 
 
 def test_collapse_masked_intervals_by_example():
+    """
+    Test converting to new coordinate system by removing inaccessible intervals,
+    on a worked example
+    """
     ts = example_ts()
     accessible = msprime.RateMap(
         position=np.array([0., 5., 12., 18., 32., 40.]),
@@ -270,8 +275,11 @@ def test_collapse_masked_intervals_by_example():
     np.testing.assert_allclose(tree_spans, tree_spans_ck)
 
 
-#@pytest.mark.skip
 def test_collapse_masked_intervals_by_simulation():
+    """
+    Test converting to new coordinate system by removing inaccessible intervals,
+    shotgun on simulation
+    """
     num_intervals = 100
     rng = np.random.default_rng(1024)
     ts_gen = msprime.sim_ancestry(
@@ -298,24 +306,3 @@ def test_collapse_masked_intervals_by_simulation():
         counts = ts_collapse.pair_coalescence_counts(windows=breaks_collapse)
         counts_ck = ts_gap.pair_coalescence_counts(windows=breaks)
         np.testing.assert_allclose(counts, counts_ck)
-
-
-# readme sketch:
-
-# Accounting 
-# One of the very useful things about ARGs is that we can compute expectations of summary statistics conditional on the ARG -- that is, without noise from the mutational process (these are the `branch` mode statistics in tskit, in constrast to `site` mode). Doing this correctly can be a bit tricky, however. There are three ways (that I know of) to account for masked sequence when calculating these expectations.
-# - The first is to use `TreeSequence.delete_intervals`. However, edges that span a masked interval will be split. Hence if there are many small masked intervals (that are contained within trees) then using `delete_intervals` will lose much of the benefit of succinct tree sequences (compact size, fast calculation, edge spans that are informative about recombination and identity by descent). And it can be quite slow. So, we do not do this by default (but it can be toggled by adding XXXX in the config).
-# - The second is to simulate mutations using a mutation rate map that has zero rate over masked intervals; then using `site` mode statistics. This is what we do to calculate diagnostics (so as to add uncertainty from the mutational process). This fine scale mutation rate map is stored as a pickled `RateMap` (XXXX). To calculate expectations, one would average over many simulations, but this is inefficient and will generally be noisy at a fine spatial scale.
-# - The third is to map the tree sequence coordinate system to a new coordinate system that only counts accessible bases, and use `branch` mode in this new coordinate system. This is the best option, just mildly convoluted to implement. We do this to calculate coalescence rates and the genetic relatedness matrix (neither of which have a `site` mode).
-#
-# # Masking essential gaps
-# The previous section has an argument against applying a fine scale mask directly with `TreeSequence.delete_intervals`. However, there is one type of masked interval that is beneficial to remove, which are gaps over which no edges persist (For each gap, find all edges that start to the left of the gap; if these edges end before or within the gap, then the gap can be removed without impacting the succinctness of the tree seqeunce). So, these gaps *are* deleted by default (this can be disabled by adding XXXX to the config).
-#
-# # Polarisation
-# Another sticking point with actual data is polarisation. Typically variants are polarised relative to one or more outgroups. SINGER has an option to specify the probability that the ancestral allele is correct; so can be used for unpolarised data. In practice, though, the input polarisation seems to matter quite a lot. For example, the REF column in the unpolarised VCF will typically be the allele carried by the individual used for the reference assembly. Imagine the individual used to generate the reference genome is in the sample. Because it is the reference, all its genotypes in the (unpolarised) VCF will be 0. This is extremely unlikely under any realistic mutation model, and as a result SINGER will have a hard time escaping this "pathology" via MCMC. 
-#
-# This suggests a diagnostic for detecting polarisation error. In the absence of polarisation error or ascertainment bias, and if the mutational clock is constant, then all samples will have the same mutational load (count of derived mutations) in expectation. This is because the distance from each sample to the root is the same, in every tree. Hence, we can calculate mutational load per sample at each MCMC iteration (using whatever polarisation SINGER has settled on in that MCMC iteration); these should be more or less equal. The figure below shows a traceplot for the "reference genome" scenario described above.
-#
-# In practice, it seems that randomly choosing the ancestral allele for every site works well as a general purpose strategy for initializing the polarisations, so we do this by default if `polarised: False` (but this random initialization can be toggled off by adding XXXX to the config). The figure below shows a mutational load traceplot using the same data as before, but randomly initializing the polarizations.
-    
-

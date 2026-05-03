@@ -1,5 +1,6 @@
 *.swp
 *.swo
+*.swn
 .snakemake/
 *.log
 data/
@@ -16,3 +17,4 @@ output-*/
 validation-*/
 ablation-*/
 TODO
+CLAUDE.md
