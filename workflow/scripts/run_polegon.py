@@ -23,65 +23,44 @@ def tag():
     return f"[singer-snakemake::{snakemake.rule}::{str(datetime.now())}]"
 
 
-# TODO: clean this up. In particular compute_mutation_parents should take care
-# of the sort with latest tskit.
 def singer_to_tree_sequence(
     node_file: str, 
-    edge_file: str, 
+    branch_file: str, 
     mutation_file: str,
 ) -> tskit.TreeSequence:
+    # build nodes and edges tables
     node_time = np.loadtxt(node_file)
-    edge_span = np.loadtxt(edge_file)
-    mutations = np.loadtxt(mutation_file)
-
-    # edges and nodes
-    edge_span = edge_span[edge_span[:, 2] >= 0, :]
-    length = max(edge_span[:, 1])
-
-    tables = tskit.TableCollection(sequence_length=length)
-    node_table = tables.nodes
-    edge_table = tables.edges
-    for t in node_time:
-        if (t == 0):
-            node_table.add_row(flags=tskit.NODE_IS_SAMPLE)
+    branches = np.loadtxt(branch_file)
+    left, right, parent, child = branches.T
+    parent = parent.astype(np.int32)
+    child = child.astype(np.int32)
+    tables = tskit.TableCollection(sequence_length=right.max())
+    for time in node_time:
+        if time == 0:
+            tables.nodes.add_row(flags=tskit.NODE_IS_SAMPLE)
         else:
-            node_table.add_row(time=t)
-    parent_indices = np.array(edge_span[:, 2], dtype=np.int32)
-    child_indices = np.array(edge_span[:, 3], dtype=np.int32)
-    edge_table.set_columns(
-        left=edge_span[:, 0], 
-        right=edge_span[:, 1], 
-        parent=parent_indices, 
-        child=child_indices,
+            tables.nodes.add_row(time=time)
+    valid = parent >= 0
+    tables.edges.set_columns(
+        left=left[valid],
+        right=right[valid], 
+        parent=parent[valid],
+        child=child[valid],
     )
-
-    # mutations
-    n = mutations.shape[0]
-    mut_pos = -1
-    site_id = 0
-    for i in range(n):
-        if mutations[i, 0] != mut_pos and mutations[i, 0] < tables.sequence_length:
-            tables.sites.add_row(position=mutations[i, 0], ancestral_state='0')
-            mut_pos = mutations[i, 0]
-        site_id = tables.sites.num_rows - 1
-        tables.mutations.add_row(site=site_id, node=int(mutations[i, 1]), derived_state=str(int(mutations[i, 3])))
-    mut_time = tables.nodes.time[tables.mutations.node]
-    mut_coord = tables.sites.position[tables.mutations.site]
-    mut_order = np.lexsort((-mut_time, mut_coord))
-    mut_state = tskit.unpack_strings(
-        tables.mutations.derived_state, 
-        tables.mutations.derived_state_offset,
-    )
-    mut_state, mut_state_offset = tskit.pack_strings(np.array(mut_state)[mut_order])
-    tables.mutations.set_columns(
-        site=tables.mutations.site[mut_order],
-        node=tables.mutations.node[mut_order],
-        time=np.repeat(tskit.UNKNOWN_TIME, tables.mutations.num_rows),
-        derived_state=mut_state,
-        derived_state_offset=mut_state_offset,
-    )
-
-    # finalize
+    # build mutations and sites tables
+    mutations = np.loadtxt(mutation_file)
+    last_position = -1
+    last_site = 0
+    for (pos, node, _, state) in mutations:
+        if pos != last_position and pos < tables.sequence_length:
+            last_site = tables.sites.add_row(position=pos, ancestral_state='0')
+            last_position = pos 
+        tables.mutations.add_row(
+            site=last_site, 
+            node=int(node), 
+            derived_state=str(int(state)),
+        )
+    # sort and finalize
     tables.sort()
     tables.build_index()
     tables.compute_mutation_parents()
@@ -90,9 +69,11 @@ def singer_to_tree_sequence(
 
 
 def root_table(ts: tskit.TreeSequence) -> np.ndarray:
+    # FIXME: different logic is needed to handle gaps
     left, root = 0.0, tskit.NULL
     stems = []
     for tree in ts.trees():
+        assert tree.num_edges
         right = tree.interval.left
         next_root = tree.root if tree.num_edges else tskit.NULL
         if next_root != root:
