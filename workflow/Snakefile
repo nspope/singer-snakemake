@@ -39,7 +39,7 @@ MIN_SITES = float(config["min-sites"])
 MAX_MISSING = float(config["max-missing"])
 MIN_GAP_SIZE = float(config["min-gap-size"])
 MIN_BRANCH_LENGTH = float(config["min-branch-length"])
-MAX_MASKED_SAMPLES = int(config.get("max-masked-samples", 0))
+MAX_MASKED_SAMPLES = int(config.get("max-masked-samples", 0))  # FIXME: hidden in config
 
 SINGER_MCMC_THIN = int(config["singer-mcmc-thin"])
 SINGER_MCMC_SAMPLES = int(config["singer-mcmc-samples"])
@@ -58,7 +58,7 @@ assert POLEGON_MCMC_BURNIN < POLEGON_MCMC_SAMPLES, "Burn-in exceeds number of PO
 
 STATS_TIME_GRID = config["stats-time-grid"]
 STATS_WINDOW_SIZE = float(config["stats-window-size"])
-PAIRCOAL_RECOMBINATION_WEIGHTS = config.get("paircoal-recombination-weights", False)
+PAIRCOAL_RECOMBINATION_WEIGHTS = config.get("paircoal-recombination-weights", False)  # FIXME: hidden in config
 
 # use a modified SINGER binary that allows per-site polarisation
 SINGER_BINARY = os.path.join(

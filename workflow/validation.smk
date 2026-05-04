@@ -91,6 +91,19 @@ TRUE_PAIR_RAT_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.true_pair_rat.npy"
 MISPOLARISED_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.mispolarised.npy"
 PLOT_PATH = f"{OUTPUT_DIR}/plots"
 
+# enumerate outputs
+VCF_OUTPUT = expand(VCF_PATH, chrom=SIMULATION_SEEDS)
+TREES_OUTPUT = expand(INFR_TREES_PATH, chrom=SIMULATION_SEEDS, rep=MCMC_SAMPLES)
+INACCESSIBLE_OUTPUT = expand(INACCESSIBLE_PATH, chrom=SIMULATION_SEEDS)
+DIAGNOSTICS_OUTPUT = expand(DIAGNOSTICS_PATH, chrom=SIMULATION_SEEDS)
+ALLELES_OUTPUT = expand(VCF_ALLELES_PATH, chrom=SIMULATION_SEEDS)
+PDF_PLOT = os.path.join(PLOT_PATH, "mutation-age-pdf.png")
+EXP_PLOT = os.path.join(PLOT_PATH, "mutation-age-expectation.png")
+REL_PLOT = os.path.join(PLOT_PATH, "relatedness-over-time.png")
+POL_PLOT = os.path.join(PLOT_PATH, "proportion-mispolarised.png")
+PAIR_DENS_PLOT = os.path.join(PLOT_PATH, "proportion-coalescing-pairs.png")
+PAIR_RATE_PLOT = os.path.join(PLOT_PATH, "pair-coalescence-rates.png")
+
 # log files
 SIMULATION_LOG = f"{INPUT_DIR}/{{chrom}}.log"
 
@@ -99,17 +112,17 @@ SIMULATION_LOG = f"{INPUT_DIR}/{{chrom}}.log"
 
 rule all:
     input:
-        vcf = expand(VCF_PATH, chrom=SIMULATION_SEEDS),
-        trees = ancient(expand(INFR_TREES_PATH, chrom=SIMULATION_SEEDS, rep=MCMC_SAMPLES)),
-        inaccessible = ancient(expand(INACCESSIBLE_PATH, chrom=SIMULATION_SEEDS)),
-        diagnostics = ancient(expand(DIAGNOSTICS_PATH, chrom=SIMULATION_SEEDS)),
-        alleles = ancient(expand(VCF_ALLELES_PATH, chrom=SIMULATION_SEEDS)),
-        pdf_plot = os.path.join(PLOT_PATH, "mutation-age-pdf.png"),
-        exp_plot = os.path.join(PLOT_PATH, "mutation-age-expectation.png"),
-        rel_plot = os.path.join(PLOT_PATH, "relatedness-over-time.png"),
-        pol_plot = os.path.join(PLOT_PATH, "proportion-mispolarised.png"),
-        pair_den_plot = os.path.join(PLOT_PATH, "proportion-coalescing-pairs.png"),
-        pair_rat_plot = os.path.join(PLOT_PATH, "pair-coalescence-rates.png"),
+        vcf = VCF_OUTPUT,
+        trees = ancient(TREES_OUTPUT),
+        inaccessible = ancient(INACCESSIBLE_OUTPUT),
+        diagnostics = ancient(DIAGNOSTICS_OUTPUT),
+        alleles = ancient(ALLELES_OUTPUT),
+        pdf_plot = PDF_PLOT,
+        exp_plot = EXP_PLOT,
+        rel_plot = REL_PLOT,
+        pol_plot = POL_PLOT,
+        pair_dens_plot = PAIR_DENS_PLOT,
+        pair_rate_plot = PAIR_RATE_PLOT,
 
 
 rule simulate_arg:
@@ -194,8 +207,8 @@ rule compare_mutation_ages:
         true_site_afs = expand(TRUE_SITE_AFS_PATH, chrom=SIMULATION_SEEDS),
         infr_site_afs = expand(INFR_SITE_AFS_PATH, chrom=SIMULATION_SEEDS),
     output:
-        pdf_plot = rules.all.input.pdf_plot,
-        exp_plot = rules.all.input.exp_plot,
+        pdf_plot = PDF_PLOT,
+        exp_plot = EXP_PLOT,
     params:
         time_grid = TIME_GRID,
     script:
@@ -242,7 +255,7 @@ rule compare_relatedness:
         true_site_relatedness = expand(TRUE_SITE_REL_PATH, chrom=SIMULATION_SEEDS),
         infr_site_relatedness = expand(INFR_SITE_REL_PATH, chrom=SIMULATION_SEEDS),
     output:
-        rel_plot = rules.all.input.rel_plot,
+        rel_plot = REL_PLOT,
     params:
         time_grid = TIME_GRID,
         log_relatedness = False,
@@ -276,7 +289,7 @@ rule compare_mispolarised:
     input:
         mispolarised = expand(MISPOLARISED_PATH, chrom=SIMULATION_SEEDS),
     output:
-        pol_plot = rules.all.input.pol_plot,
+        pol_plot = POL_PLOT,
     script:
         "scripts/validation/compare_mispolarised.py"
 
@@ -323,8 +336,8 @@ rule compare_pair_coalescence:
         infr_pair_rates = expand(INFR_PAIR_RAT_PATH, chrom=SIMULATION_SEEDS),
         true_pair_rates = expand(TRUE_PAIR_RAT_PATH, chrom=SIMULATION_SEEDS),
     output:
-        pair_den_plot = rules.all.input.pair_den_plot,
-        pair_rat_plot = rules.all.input.pair_rat_plot,
+        pair_dens_plot = PAIR_DENS_PLOT,
+        pair_rate_plot = PAIR_RATE_PLOT,
     params:
         time_grid = TIME_GRID,
         log_coalescence_rates = True,
