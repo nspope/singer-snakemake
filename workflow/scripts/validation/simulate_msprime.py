@@ -24,6 +24,7 @@ from utils import assert_valid_bedmask
 from utils import assert_valid_hapmap
 from utils import repolarise_tree_sequence
 from utils import extract_ancestral_sequence
+from utils import one_shift_coordinates
 
 warnings.filterwarnings("ignore")
 logging.basicConfig(
@@ -158,8 +159,8 @@ if not snakemake.params.skip_ancestral:
     ancestral.close()
     logging.info(f"Wrote ancestral states to {prefix}.ancestral.fa.gz")
 
-# write out trees
-tszip.compress(ts, snakemake.output.trees)
+# write out trees with one-based coordinate system
+tszip.compress(one_shift_coordinates(ts), snakemake.output.trees)
 logging.info(f"Wrote tree sequence to {snakemake.output.trees}")
 
 # mispolarise and write out VCF

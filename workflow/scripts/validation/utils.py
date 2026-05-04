@@ -300,6 +300,19 @@ def transform_coordinates(
     return tab.tree_sequence()
 
 
+def one_shift_coordinates(ts: tskit.TreeSequence) -> tskit.TreeSequence:
+    """
+    Transform tree sequence from zero-based to one-based coordinates, leaving
+    a one-bp empty "buffer" at position zero.
+    """
+    tab = ts.dump_tables()
+    tab.sequence_length = ts.sequence_length + 1
+    tab.edges.left = tab.edges.left + 1
+    tab.edges.right = tab.edges.right + 1
+    tab.sites.position = tab.sites.position + 1
+    return tab.tree_sequence()
+
+
 def hypergeometric_probabilities(input_dim: int, output_dim: int) -> np.ndarray:
     """
     Matrix of hypergeometric sampling probabilities; the `i,j`th element is the

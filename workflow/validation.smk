@@ -277,7 +277,8 @@ rule calculate_mispolarised:
         mispolarised = MISPOLARISED_PATH,
     params:
         project_to = PROJECT_TO,
-        position_adjust = 1,  # position offset applied to true trees
+        # FIXME: unnecessary as treeseq coords are now one-based:
+        position_adjust = 0,  # position offset applied to true trees
     script:
         "scripts/validation/calculate_mispolarised.py"
 

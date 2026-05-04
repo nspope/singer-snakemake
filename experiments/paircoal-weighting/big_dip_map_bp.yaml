@@ -1,0 +1,19 @@
+output-dir: "paircoal-weighting-big-dip-map-bp"  # where to place validation results and simulations
+random-seed: 1024  # global random seed
+num-replicates: 1  # number of replicate ARGs to simulate
+mask-sequence: [0.0, 0]  # randomly mask intervals with this [density, mean length]
+mask-variants: 0.0  # randomly mask this proportion of variants
+inaccessible-bed: ~  # path to bedfile with masked intervals (will be combined with simulated intervals, can be omitted)
+prop-mispolarise: 0.0  # randomly mispolarise this proportion of biallelic variants (or "ref", "maf", "frq")
+time-grid: [1, 6, 60]  # [log10 start, log10 stop, number of intervals] for plots
+project-afs-to: 4  # project AFS to this number of haploids per population for plots
+singer-snakemake-config: "config/example_config.yaml"  # path to singer-snakemake config to use (mutation/recombination rates ignored)
+singer-snakemake-config-override:  # override these key-values from `singer-snakemake-config`
+    polarised: true
+    paircoal-recombination-weights: false
+msprime-config:  # simulation settings
+    demographic-model: "experiments/paircoal-weighting/paircoal-weighting.demes.yaml"
+    samples: {"generic": 30}
+    recombination-map: "experiments/paircoal-weighting/paircoal-weighting.0.hapmap"
+    mutation-rate: 1.0e-8
+    ploidy: 2
