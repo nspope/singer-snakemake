@@ -140,7 +140,8 @@ if not os.path.exists(mask_file):
     bedmask = np.empty((0, 2))
 else:
     bedmask = np.loadtxt(mask_file, usecols=[1, 2], ndmin=2).astype(np.int64)
-    assert np.max(bedmask) <= hapmap.sequence_length, "Mask position exceeds hapmap length"
+    if bedmask.size:
+        assert np.max(bedmask) <= hapmap.sequence_length, "Mask position exceeds hapmap length"
     logfile.write(f"{tag()} Read {bedmask.shape[0]} inaccessible intervals from {mask_file}\n")
 bitmask = np.full(int(hapmap.sequence_length), False)
 for (a, b) in bedmask: bitmask[a:b] = True
