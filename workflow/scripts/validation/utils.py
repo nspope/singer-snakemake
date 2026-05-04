@@ -232,12 +232,22 @@ def repolarise_tree_sequence(
         if repolarise[site.id] and biallelic:
             mutation = next(iter(site.mutations))
             for r in tree.roots:
-                tab.mutations.add_row(site=site.id, node=r, derived_state=site.ancestral_state)
+                tab.mutations.add_row(
+                    site=site.id, 
+                    node=r, 
+                    derived_state=site.ancestral_state,
+                    time=tree.time(r),
+                )
             tab.sites.add_row(position=site.position, ancestral_state=mutation.derived_state)
         else:
             tab.sites.add_row(position=site.position, ancestral_state=site.ancestral_state)
         for mutation in site.mutations:
-            tab.mutations.add_row(site=mutation.site, node=mutation.node, derived_state=mutation.derived_state)
+            tab.mutations.add_row(
+                site=mutation.site, 
+                node=mutation.node, 
+                derived_state=mutation.derived_state,
+                time=mutation.time,
+            )
     tab.sort()
     tab.build_index()
     tab.compute_mutation_parents()
