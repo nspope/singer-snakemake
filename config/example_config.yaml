@@ -14,7 +14,6 @@ min-gap-size: 1.0e6 # minimum size in base pairs for a masked interval to be con
 max-missing: 0.75 # ignore chunks with more than this proportion of masked sequence or filtered variants
 min-sites: 500 # ignore chunks with fewer than this number of accessible polymorphic sites
 min-branch-length: 1.0e-7 # minimum possible branch length in generations in tree sequence
-max-masked-samples: 0 # maximum masked samples for interval to be kept if sample masks are provided
 # --- SINGER options ---
 singer-mcmc-samples: 100 # number of MCMC samples (each sample is a tree sequence)
 singer-mcmc-thin: 100 # thinning interval between MCMC samples

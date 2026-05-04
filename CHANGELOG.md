@@ -5,6 +5,9 @@
 - Add `singer-skip-failures` flag that will treat chunks where MCMC fails as missing and still produce output
 - Use per-sample masks if provdied; these are always hard-masked leaving trees with varying numbers of tips
 - All outputs in one-based coords; previously ratemaps were zero-based while tree sequences were one-based
+- Option to average coalescence cdf/rates over recombination map rather than bp, which can reduce variance
+
+TODO: document per-sample-masks and average-over-rec-map arguments and expose in example config
 
 # 3-Mar-26 [0.1.1]
 

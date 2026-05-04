@@ -306,3 +306,37 @@ def test_transform_coordinates_by_simulation():
         counts = ts_collapse.pair_coalescence_counts(windows=breaks_collapse)
         counts_ck = ts_gap.pair_coalescence_counts(windows=breaks)
         np.testing.assert_allclose(counts, counts_ck)
+
+
+def test_transform_coordinates_with_nans():
+    """
+    Rate maps produced by the pipeline sometimes have `nan` rate over a one-bp interval
+    introduced by the 1-based coordinate shift. `transform_coordinates` must
+    tolerate this.
+    """
+    ts = example_ts()
+    rm = msprime.RateMap(
+        position=[0.0, 1.0, ts.sequence_length],
+        rate=[np.nan, 1.0],
+    )
+    # insert sites in NaN and non-NaN regions
+    tab = ts.dump_tables()
+    site_id = tab.sites.add_row(position=0, ancestral_state="0")
+    tab.mutations.add_row(site=site_id, node=0, derived_state="1")
+    site_id = tab.sites.add_row(position=ts.sequence_length - 1, ancestral_state="0")
+    tab.mutations.add_row(site=site_id, node=0, derived_state="1")
+    tab.sort()
+    ts = tab.tree_sequence()
+    out = transform_coordinates(ts, rm)
+    # NaNs are not leaked into output
+    assert np.isfinite(out.sequence_length)
+    assert np.all(np.isfinite(out.tables.edges.left))
+    assert np.all(np.isfinite(out.tables.edges.right))
+    assert np.all(np.isfinite(out.tables.sites.position))
+    # sequence_length equals integral over [1, L] of the non-NaN rates
+    assert out.sequence_length == ts.sequence_length - 1
+    # first site and mutation dropped as they fall inside nan
+    assert out.num_sites == ts.num_sites - 1
+    assert out.num_mutations == ts.num_mutations - 1
+
+

@@ -14,7 +14,7 @@ min-gap-size: 1.0e6 # minimum size in base pairs for a masked interval to be con
 max-missing: 0.75 # ignore chunks with more than this proportion of masked sequence or filtered variants
 min-sites: 500 # ignore chunks with fewer than this number of accessible polymorphic sites
 min-branch-length: 1.0e-7 # minimum possible branch length in generations in tree sequence
-max-masked-samples: 10 # maximum masked samples for interval to be kept if sample masks are provided
+max-masked-samples: 10 # maximum masked samples for interval to be kept if sample masks are provided (FIXME: hidden)
 # --- SINGER options ---
 singer-mcmc-samples: 10 # number of MCMC samples (each sample is a tree sequence)
 singer-mcmc-thin: 10 # thinning interval between MCMC samples
@@ -30,6 +30,7 @@ polegon-max-step: 10.0 # step size used in proposal for POLEGON dating
 # --- summary statistics ---
 stats-time-grid: [1, 7, 25]  # [log10 start, log10 stop, number of intervals] for coalescence rates, etc
 stats-window-size: 5.0e4 # size of genomic windows in base pairs for comparing expected vs observed
+paircoal-recombination-weights: true # average coalescing pairs over recombination map rather than base pairs (FIXME: hidden)
 # --- misc debugging options ---
 model-masked-sequence: true # build fine-scale mu rate map with zero rate in masked intervals; if false, fold inaccessible proportion into a global rate
 random-polarisation: true # randomly flip ref/alt for unpolarised sites at initialisation
@@ -42,8 +43,8 @@ skip-node-masks: false # skip per-sample node mask handling in run_polegon (do n
 remove-polegon-inputs: true # delete the temporary POLEGON input text files after the run; set false to inspect
 repolarise-ancestral-state: true # absorb above-root mutations and flip ancestral state at affected sites
 delete-genealogical-gaps: true # remove masked intervals not spanned by any edge from the merged tree sequence
-delete-masked-intervals: false # hard-remove all masked intervals from the merged tree sequence (aggressive; debug only)
-delete-imputed-intervals: true # remove per-sample masked ancestry from the merged tree sequence (second-pass pruning)
+delete-masked-intervals: false # remove all masked intervals from the merged tree sequence
+delete-imputed-intervals: true # remove per-sample masked ancestry from the merged tree sequence
 record-chunk-provenance: true # record per-chunk SINGER/POLEGON parameters in the tree sequence provenance table
 coalrate-tail-cutoff: 0.05 # mask coalescence rate estimates for time bins with survival proportion below this threshold
 #singer-binary: "/path/to/singer" # override the bundled SINGER binary

@@ -26,6 +26,7 @@ def tag():
 # --- implm --- #
 
 inaccessible = pickle.load(open(snakemake.input.inaccessible, "rb"))
+recombination_rate = pickle.load(open(snakemake.input.recomb_rate, "rb"))
 ts = tszip.decompress(snakemake.input.trees)
 
 tail_cutoff = snakemake.params.tail_cutoff
@@ -36,6 +37,9 @@ time_windows = np.append(np.append(0, time_windows), np.inf)
 # correct for masked sequence by adjusting edge spans
 accessible = msprime.RateMap(position=inaccessible.position, rate=1 - inaccessible.rate)
 accessible = multiply_ratemaps(accessible, extract_accessible_ratemap(ts))
+if snakemake.params.use_recombination_units:
+    # this can reduce variance from long-spanning trees in low-recombination regions
+    accessible = multiply_ratemaps(accessible, recombination_rate)
 ts = transform_coordinates(ts, accessible)
 
 # global pair coalescence rates
@@ -49,7 +53,6 @@ output = {
     "breaks" : time_windows[1:-2],
 }
 pickle.dump(output, open(snakemake.output.coalrate, "wb"))
-
 
 # stratified global pair coalescence rates (cross-coalescence)
 output = {}
