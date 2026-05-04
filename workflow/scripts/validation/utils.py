@@ -246,23 +246,23 @@ def repolarise_tree_sequence(
     return tab.tree_sequence()
 
 
-def collapse_masked_intervals(
+def transform_coordinates(
     ts: tskit.TreeSequence, 
-    accessible: msprime.RateMap,
+    ratemap: msprime.RateMap,
 ) -> tskit.TreeSequence:
     """
-    Return a copy of the tree sequence with masked intervals (where `accessible.rate == 0.0`)
-    collapsed, so that the coordinate system is in terms of unmasked sequence length.
-    Zero length edges are removed, and any nodes that are then disconnected are removed as well.
-    All sites and mutations that are within the collapsed intervals are removed.
+    Return a copy of the tree sequence `ts` with the coordinate system
+    monotonically transformed according to `ratemap.get_cumulative_mass(x)`.
+    Zero length edges are removed, and any nodes that are then disconnected are
+    removed as well.  All sites and mutations that are within zero-rate regions
+    are removed.
     """
-    assert np.all(np.logical_or(accessible.rate == 0.0, accessible.rate == 1.0))
-    assert accessible.sequence_length == ts.sequence_length
+    assert ratemap.sequence_length == ts.sequence_length
     tab = ts.dump_tables()
-    tab.sequence_length = accessible.get_cumulative_mass(ts.sequence_length)
+    tab.sequence_length = ratemap.get_cumulative_mass(ts.sequence_length)
     # map edges to new coordinate system and remove those with zero length
-    tab.edges.left = accessible.get_cumulative_mass(tab.edges.left)
-    tab.edges.right = accessible.get_cumulative_mass(tab.edges.right)
+    tab.edges.left = ratemap.get_cumulative_mass(tab.edges.left)
+    tab.edges.right = ratemap.get_cumulative_mass(tab.edges.right)
     tab.edges.keep_rows(tab.edges.right > tab.edges.left)
     # remove disconnected nodes
     is_connected = np.full(tab.nodes.num_rows, False)
@@ -272,8 +272,8 @@ def collapse_masked_intervals(
     tab.edges.parent = node_map[tab.edges.parent]
     tab.edges.child = node_map[tab.edges.child]
     # map sites to new coordinate system and remove those in masked intervals
-    site_map = tab.sites.keep_rows(accessible.get_rate(tab.sites.position).astype(bool))
-    tab.sites.position = accessible.get_cumulative_mass(tab.sites.position)
+    site_map = tab.sites.keep_rows(ratemap.get_rate(tab.sites.position).astype(bool))
+    tab.sites.position = ratemap.get_cumulative_mass(tab.sites.position)
     # update mutation pointers and remove those without a node or site
     tab.mutations.node = node_map[tab.mutations.node]
     tab.mutations.site = site_map[tab.mutations.site]

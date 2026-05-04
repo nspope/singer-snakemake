@@ -12,7 +12,7 @@ import numpy as np
 import tszip
 from datetime import datetime
 
-from validation.utils import collapse_masked_intervals
+from validation.utils import transform_coordinates
 from utils import multiply_ratemaps 
 from utils import extract_accessible_ratemap
 
@@ -36,7 +36,7 @@ time_windows = np.append(np.append(0, time_windows), np.inf)
 # correct for masked sequence by adjusting edge spans
 accessible = msprime.RateMap(position=inaccessible.position, rate=1 - inaccessible.rate)
 accessible = multiply_ratemaps(accessible, extract_accessible_ratemap(ts))
-ts = collapse_masked_intervals(ts, accessible)
+ts = transform_coordinates(ts, accessible)
 
 # global pair coalescence rates
 pdf = ts.pair_coalescence_counts(time_windows=time_windows, pair_normalise=True)

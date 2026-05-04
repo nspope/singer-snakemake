@@ -8,7 +8,7 @@ import msprime
 import pytest
 from workflow.scripts.validation.utils import repolarise_tree_sequence
 from workflow.scripts.validation.utils import simulate_mispolarisation
-from workflow.scripts.validation.utils import collapse_masked_intervals
+from workflow.scripts.validation.utils import transform_coordinates
 from workflow.scripts.utils import absorb_mutations_above_root
 from workflow.scripts.utils import find_genealogical_gaps 
 from workflow.scripts.utils import compactify_run_length_encoding
@@ -255,7 +255,7 @@ def test_find_genealogical_gaps_by_simulation():
     assert total_keep > 0
 
 
-def test_collapse_masked_intervals_by_example():
+def test_transform_coordinates_by_example():
     """
     Test converting to new coordinate system by removing inaccessible intervals,
     on a worked example
@@ -265,7 +265,7 @@ def test_collapse_masked_intervals_by_example():
         position=np.array([0., 5., 12., 18., 32., 40.]),
         rate=np.array([1.0, 0.0, 1.0, 0.0, 1.0]),
     )
-    ts_collapse = collapse_masked_intervals(ts, accessible)
+    ts_collapse = transform_coordinates(ts, accessible)
     assert ts_collapse.num_trees == 3
     assert ts_collapse.num_edges == 15
     assert ts_collapse.num_nodes == ts.num_nodes
@@ -275,7 +275,7 @@ def test_collapse_masked_intervals_by_example():
     np.testing.assert_allclose(tree_spans, tree_spans_ck)
 
 
-def test_collapse_masked_intervals_by_simulation():
+def test_transform_coordinates_by_simulation():
     """
     Test converting to new coordinate system by removing inaccessible intervals,
     shotgun on simulation
@@ -300,7 +300,7 @@ def test_collapse_masked_intervals_by_simulation():
             accessible.right[accessible.rate==0.0]
         ], axis=-1)
         ts_gap = ts.delete_intervals(intervals)
-        ts_collapse = collapse_masked_intervals(ts, accessible)
+        ts_collapse = transform_coordinates(ts, accessible)
         breaks = np.linspace(0, ts.sequence_length, 3)
         breaks_collapse = accessible.get_cumulative_mass(breaks)
         counts = ts_collapse.pair_coalescence_counts(windows=breaks_collapse)
