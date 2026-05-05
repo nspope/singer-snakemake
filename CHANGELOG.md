@@ -7,7 +7,7 @@
 - All outputs in one-based coords; previously ratemaps were zero-based while tree sequences were one-based
 - Option to average coalescence cdf/rates over recombination map rather than bp, which can reduce variance
 
-TODO: document per-sample-masks and average-over-rec-map arguments and expose in example config
+TODO: document per-sample-masks and average-over-rec-map arguments, expose in example config
 
 # 3-Mar-26 [0.1.1]
 

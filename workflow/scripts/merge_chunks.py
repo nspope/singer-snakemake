@@ -29,12 +29,11 @@ def tag():
 def pipeline_provenance(version_string, parameters):
     git_dir = os.path.join(snakemake.scriptdir, os.path.pardir, os.path.pardir, ".git")
     git_commit = subprocess.run(
-        ["git", f"--git-dir={git_dir}", "describe", "--always"],
+        ["git", f"--git-dir={git_dir}", "describe", "--tags", "--always"],
         capture_output=True,
     )
-    if git_commit.returncode == 0:
-        git_commit = git_commit.stdout.strip().decode('utf-8')
-        version_string = f"{version_string}.{git_commit}"
+    if git_commit.returncode == 0:  # try fetching version automatically
+        version_string = git_commit.stdout.strip().decode('utf-8')
     return {
         "software": {"name": "singer-snakemake", "version": version_string},
         "parameters": snakemake.config,

@@ -17,6 +17,21 @@ import subprocess
 from datetime import datetime
 
 
+def top_level_info(path: str, config: dict, version_string: str) -> None:
+    git_dir = os.path.join(workflow.basedir, os.path.pardir, ".git")
+    git_commit = subprocess.run(
+        ["git", f"--git-dir={git_dir}", "describe", "--tags", "--always"],
+        capture_output=True,
+    )
+    if git_commit.returncode == 0:
+        version_string = git_commit.stdout.strip().decode('utf-8')
+    with open(path, "w") as handle:
+        handle.write(f"date: {datetime.now()}\n")
+        handle.write(f"version: {version_string}\n")
+        handle.write(f"config: {config}\n")
+
+
+
 # ------ config ------ #
 
 # configfile: "config/example_config.yaml"
@@ -87,7 +102,15 @@ CHUNK_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "chunks")
 STATS_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "stats")
 
 
+
 # ------ rules ------ #
+
+onsuccess: 
+    top_level_info(os.path.join(OUTPUT_DIR, "info"), config, VERSION)
+
+onerror: 
+    top_level_info(os.path.join(OUTPUT_DIR, "info"), config, VERSION)
+
 
 rule all:
     input:
