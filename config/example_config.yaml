@@ -14,6 +14,7 @@ min-gap-size: 1.0e6 # minimum size in base pairs for a masked interval to be con
 max-missing: 0.75 # ignore chunks with more than this proportion of masked sequence or filtered variants
 min-sites: 500 # ignore chunks with fewer than this number of accessible polymorphic sites
 min-branch-length: 1.0e-7 # minimum possible branch length in generations in tree sequence
+max-masked-samples: 0 # (experimental) maximum masked samples allowed if per-sample masks are provided
 # --- SINGER options ---
 singer-mcmc-samples: 100 # number of MCMC samples (each sample is a tree sequence)
 singer-mcmc-thin: 100 # thinning interval between MCMC samples
@@ -29,3 +30,4 @@ polegon-max-step: 10.0 # step size used in proposal for POLEGON dating
 # --- summary statistics ---
 stats-time-grid: [1, 7, 25]  # [log10 start, log10 stop, number of intervals] for coalescence rates, etc
 stats-window-size: 5.0e4 # size of genomic windows in base pairs for comparing expected vs observed
+paircoal-reweight: false # (experimental) average coalescing pairs over recombination map rather than base pairs
