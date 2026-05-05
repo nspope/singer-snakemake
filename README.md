@@ -87,20 +87,19 @@ The output files for each chromosome will be generated in `results/<chromosome_n
   - __\<chromosome_name>.filtered.p__ : `msprime.RateMap` containing proportion of filtered variants
   - __\<chromosome_name>.chunks.p__ : `msprime.RateMap` containing chunk boundaries (rate is zero if filtered) 
   - __\<chromosome_name>.windows.p__ : `msprime.RateMap` containing windowed statistics boundaries (rate is zero if filtered) 
-  - __\<chromosome_name>.vcf.stats.p__ : "observed values" for summary statistics (e.g. calculated from with `scikit-allel`)
-  - __\<chromosome_name>.vcf__ : filtered VCF used as input to SINGER
   - __chunks/*__ the raw SINGER output and logs
   - __plots/pair-coalescence-pdf.png__, __plots/cross-coalescence-pdf.png__: pair coalescence time distribution for all samples and between strata (if supplied), with a thin line for each MCMC replicate and a thick line for the posterior mean
   - __plots/pair-coalescence-rates.png__, __plots/cross-coalescence-rates.png__: pair coalescence rates for all samples and between strata (if supplied), with a thin line for each MCMC replicate and a thick line for the posterior mean
   - __plots/diversity-trace.png__, __plots/tajima-d-trace.png__ : MCMC trace for fitted nucleotide diversity and Tajima's D
   - __plots/diversity-scatter.png__, __plots/tajima-d-scatter.png__ : observed vs fitted nucleotide diversity and Tajima's D, across chunks
   - __plots/diversity-skyline.png__, __plots/tajima-d-skyline.png__ : observed and fitted nucleotide diversity and Tajima's D, across genome position
-  - __plots/frequency-spectrum.png__ : observed vs fitted site frequency spectra, folded or unfolded depending on whether data is polarised
+  - __plots/frequency-spectrum.png__ : observed vs fitted site frequency spectra
   - __plots/repolarised-trace.png__ : MCMC trace showing proportion of flipped ancestral states
-  - __plots/mutational-load.png__ : number of derived mutations per haplotype (should be equal in expectation)
+  - __plots/mutational-load.png__ : number of derived mutations per haplotype
   - __plots/site-density.png__ : sanity check showing proportion of missing data, proportion variant bases (out of accessible bases), average recombination rate across chunks
-  - __stats/\<chromosome_name>.\<replicate>.stats.p__ : "fitted values" for summary statistics (e.g. statistics from mutations simulated conditional on the ARG)
-  - __stats/\<chromosome_name>.\<replicate>.coalrate.p__ : pair coalescence rates (e.g. inverse of haploid Ne) within logarithmic time bins, using all samples
+  - __stats/\<chromosome_name>.\<replicate>.expected_stats.p__ : "fitted values" for summary statistics (e.g. statistics from mutations simulated conditional on the ARG)
+  - __stats/\<chromosome_name>.\<replicate>.observed_stats.p__ : "fitted values" for summary statistics (e.g. statistics from mutations simulated conditional on the ARG)
+  - __stats/\<chromosome_name>.\<replicate>.coalrate.p__ : pair coalescence rates within logarithmic time bins, using all samples
   - __stats/\<chromosome_name>.\<replicate>.crossrate.p__ : cross coalescence rates within logarithmic time bins, between and within strata (e.g. populations) according to the `stratify-by` option in the config file
 
 Every output is consistent with 1-based variant coordinates, but have an "invisible" zeroth position 
