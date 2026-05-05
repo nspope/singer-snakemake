@@ -8,9 +8,10 @@ import pytest
 
 from workflow.scripts.utils import bitmask_to_arrays
 from workflow.scripts.utils import ratemap_to_text
-from workflow.scripts.utils import multiply_ratemaps
-from workflow.scripts.utils import extract_accessible_ratemap
 from workflow.scripts.utils import compactify_run_length_encoding
+
+from workflow.scripts.validation.utils import multiply_ratemaps
+from workflow.scripts.validation.utils import extract_accessible_ratemap
 
 
 def test_bitmask_to_arrays():
