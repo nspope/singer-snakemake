@@ -193,31 +193,6 @@ def find_genealogical_gaps(
     return intervals
 
 
-def multiply_ratemaps(ratemap: msprime.RateMap, other: msprime.RateMap) -> msprime.RateMap:
-    """
-    Create a new set of intervals from the intersection of two ratemaps, and then take the 
-    product of the rates in each interval.
-    """
-    assert ratemap.sequence_length == other.sequence_length
-    new_position = np.unique(np.append(ratemap.position, other.position))
-    assert new_position[0] == 0.0 and new_position[-1] == ratemap.sequence_length
-    new_rate = ratemap.get_rate(new_position[:-1]) * other.get_rate(new_position[:-1])
-    new_ratemap = msprime.RateMap(position=new_position, rate=new_rate)
-    return new_ratemap
-
-
-def extract_accessible_ratemap(ts: tskit.TreeSequence) -> msprime.RateMap:
-    """
-    Return a ratemap where the rate is zero over masked segments in the tree
-    sequence, and one otherwise.
-    """
-    breakpoints = ts.breakpoints(as_array=True)
-    accessible = np.array([t.num_edges > 0 for t in ts.trees()])
-    new_breakpoints, new_accessible = compactify_run_length_encoding(breakpoints, accessible)
-    ratemap = msprime.RateMap(position=new_breakpoints, rate=new_accessible)
-    return ratemap
-
-
 def merge_intervals(intervals: np.ndarray) -> np.ndarray:
     """
     Sort and merge overlapping or adjacent intervals.

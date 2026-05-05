@@ -78,6 +78,7 @@ VCF_PATH = f"{INPUT_DIR}/{{chrom}}.vcf.gz"
 TRUE_TREES_PATH = f"{INPUT_DIR}/{{chrom}}.tsz"
 INFR_TREES_PATH = f"{OUTPUT_DIR}/{{chrom}}/trees/{{chrom}}.{{rep}}.tsz"
 INACCESSIBLE_PATH = f"{OUTPUT_DIR}/{{chrom}}/{{chrom}}.inaccessible.p"
+RECOMBINATION_PATH = f"{OUTPUT_DIR}/{{chrom}}/{{chrom}}.recomb_rate.p"
 VCF_ALLELES_PATH = f"{OUTPUT_DIR}/{{chrom}}/{{chrom}}.alleles.p"
 DIAGNOSTICS_PATH = f"{OUTPUT_DIR}/{{chrom}}/plots/repolarised-trace.png"
 INFR_SITE_AFS_PATH = f"{OUTPUT_DIR}/stats/{{chrom}}.infr_site_afs.npy"
@@ -302,11 +303,13 @@ rule calculate_inferred_pair_coalescence:
     input:
         trees = expand(INFR_TREES_PATH, rep=MCMC_SAMPLES, allow_missing=True),
         inaccessible = INACCESSIBLE_PATH,
+        recombination_rate = RECOMBINATION_PATH,
     output:
         pair_density = INFR_PAIR_DEN_PATH,
         pair_rates = INFR_PAIR_RAT_PATH,
     params:
         time_grid = TIME_GRID,
+        use_recombination_units = SINGER_CONFIG.get("paircoal-reweight", False),
     script:
         "scripts/validation/calculate_pair_coalescence.py"
 
@@ -318,11 +321,13 @@ rule calculate_reference_pair_coalescence:
     input:
         trees = [TRUE_TREES_PATH],
         inaccessible = INACCESSIBLE_PATH,
+        recombination_rate = RECOMBINATION_PATH,
     output:
         pair_density = TRUE_PAIR_DEN_PATH,
         pair_rates = TRUE_PAIR_RAT_PATH,
     params:
         time_grid = TIME_GRID,
+        use_recombination_units = SINGER_CONFIG.get("paircoal-reweight", False),
     script:
         "scripts/validation/calculate_pair_coalescence.py"
 

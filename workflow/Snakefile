@@ -58,7 +58,7 @@ assert POLEGON_MCMC_BURNIN < POLEGON_MCMC_SAMPLES, "Burn-in exceeds number of PO
 
 STATS_TIME_GRID = config["stats-time-grid"]
 STATS_WINDOW_SIZE = float(config["stats-window-size"])
-PAIRCOAL_RECOMBINATION_WEIGHTS = config.get("paircoal-recombination-weights", False)  # FIXME: hidden in config
+PAIRCOAL_REWEIGHT = config.get("paircoal-reweight", False)  # FIXME: hidden in config
 
 # use a modified SINGER binary that allows per-site polarisation
 SINGER_BINARY = os.path.join(
@@ -381,10 +381,12 @@ rule coalescence_rates:
     output:
         coalrate = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.coalrate.p"),
         crossrate = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.crossrate.p"),
+    log:
+        log = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.coalrate.log"),
     params:
         time_grid = STATS_TIME_GRID,
         stratify = STRATIFY_BY,
-        use_recombination_units = PAIRCOAL_RECOMBINATION_WEIGHTS,
+        use_recombination_units = PAIRCOAL_REWEIGHT,
         # for debugging:
         tail_cutoff = config.get("coalrate-tail-cutoff", 0.05),
     script:

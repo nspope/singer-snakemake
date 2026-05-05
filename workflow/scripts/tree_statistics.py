@@ -17,8 +17,8 @@ from collections import defaultdict
 from datetime import datetime
 
 from utils import mutational_load
-from utils import multiply_ratemaps 
-from utils import extract_accessible_ratemap
+from validation.utils import multiply_ratemaps 
+from validation.utils import extract_accessible_ratemap
 
 
 # --- lib --- #

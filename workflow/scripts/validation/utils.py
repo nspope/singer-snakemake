@@ -256,6 +256,45 @@ def repolarise_tree_sequence(
     return tab.tree_sequence()
 
 
+def multiply_ratemaps(ratemap: msprime.RateMap, other: msprime.RateMap) -> msprime.RateMap:
+    """
+    Create a new set of intervals from the intersection of two ratemaps, and then take the 
+    product of the rates in each interval.
+    """
+    assert ratemap.sequence_length == other.sequence_length
+    new_position = np.unique(np.append(ratemap.position, other.position))
+    assert new_position[0] == 0.0 and new_position[-1] == ratemap.sequence_length
+    new_rate = ratemap.get_rate(new_position[:-1]) * other.get_rate(new_position[:-1])
+    new_ratemap = msprime.RateMap(position=new_position, rate=new_rate)
+    return new_ratemap
+
+
+# FIXME: this is duplicated from higher-level utils for import scope reasons
+# should port dependent functions to this scope
+def compactify_run_length_encoding(breaks: np.ndarray, values: np.ndarray) -> (np.ndarray, np.ndarray):
+    """
+    Combine adjacent runs in a run length encoding if they have the same value
+    """
+    assert breaks.size == values.size + 1
+    left, right = breaks[:-1], breaks[1:]
+    changepoints = np.append(True, values[1:] != values[:-1])
+    new_breaks = np.append(left[changepoints], right[-1])
+    new_values = values[changepoints]
+    return new_breaks, new_values
+
+
+def extract_accessible_ratemap(ts: tskit.TreeSequence) -> msprime.RateMap:
+    """
+    Return a ratemap where the rate is zero over masked segments in the tree
+    sequence, and one otherwise.
+    """
+    breakpoints = ts.breakpoints(as_array=True)
+    accessible = np.array([t.num_edges > 0 for t in ts.trees()])
+    new_breakpoints, new_accessible = compactify_run_length_encoding(breakpoints, accessible)
+    ratemap = msprime.RateMap(position=new_breakpoints, rate=new_accessible)
+    return ratemap
+
+
 def transform_coordinates(
     ts: tskit.TreeSequence, 
     ratemap: msprime.RateMap,

@@ -10,7 +10,7 @@ project-afs-to: 4  # project AFS to this number of haploids per population for p
 singer-snakemake-config: "config/example_config.yaml"  # path to singer-snakemake config to use (mutation/recombination rates ignored)
 singer-snakemake-config-override:  # override these key-values from `singer-snakemake-config`
     polarised: true
-    paircoal-recombination-weights: false
+    paircoal-reweight: false
 msprime-config:  # simulation settings
     demographic-model: "experiments/paircoal-weighting/paircoal-weighting.demes.yaml"
     samples: {"generic": 30}
