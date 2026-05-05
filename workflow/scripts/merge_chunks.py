@@ -6,7 +6,6 @@ Part of https://github.com/nspope/singer-snakemake.
 
 import msprime
 import os
-import subprocess
 import tskit
 import pickle
 import numpy as np
@@ -27,13 +26,6 @@ def tag():
 
 
 def pipeline_provenance(version_string, parameters):
-    git_dir = os.path.join(snakemake.scriptdir, os.path.pardir, os.path.pardir, ".git")
-    git_commit = subprocess.run(
-        ["git", f"--git-dir={git_dir}", "describe", "--tags", "--always"],
-        capture_output=True,
-    )
-    if git_commit.returncode == 0:  # try fetching version automatically
-        version_string = git_commit.stdout.strip().decode('utf-8')
     return {
         "software": {"name": "singer-snakemake", "version": version_string},
         "parameters": snakemake.config,
@@ -41,18 +33,9 @@ def pipeline_provenance(version_string, parameters):
     }
 
 
-def tool_provenance(name, version_string, parameters):
-    return {
-        "software": {"name": name, "version": version_string},
-        "parameters": parameters,
-        "environment": tskit.provenance.get_environment(),
-    }
-
-
 def force_positive_branch_lengths(nodes_time, edges_parent, edges_child, min_length=1e-7):
     adj_nodes_time = nodes_time.copy()
-    #edge_traversal_order = np.argsort(adj_nodes_time[edges_child], kind="stable")
-    # assume that parents come after children in node ordering in SINGER output
+    # NOTE: assume that parents come after children in node ordering in SINGER output
     edge_traversal_order = np.argsort(edges_child)
     for e in edge_traversal_order:
         p, c = edges_parent[e], edges_child[e]
@@ -88,8 +71,6 @@ tables.individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
 tables.populations.metadata_schema = tskit.MetadataSchema.permissive_json()
 tables.mutations.metadata_schema = tskit.MetadataSchema.permissive_json()
 
-singer_parameters = []
-polegon_parameters = []
 population_map = {}
 num_nodes, num_samples = 0, 0
 files = zip(
@@ -103,10 +84,6 @@ for i, (params_file, recomb_file, node_file, mutation_file, branch_file) in enum
 
     params = yaml.safe_load(open(params_file))
     block_start = params['singer']['start']
-    if snakemake.params.record_chunk_provenance:
-        # FIXME: use dicts not lists
-        singer_parameters.append(params['singer'])
-        polegon_parameters.append(params['polegon'])
 
     logfile.write(f"{tag()} Converting chunk {i} with params: {params}\n")
     if os.path.getsize(node_file) == 0:
@@ -207,25 +184,7 @@ tables.mutations.set_columns(
 # add provenance recording how tree sequence was generated
 tables.provenances.add_row(
     json.dumps(
-        pipeline_provenance(snakemake.params.version["pipeline"], snakemake.config)
-    )
-)
-tables.provenances.add_row(
-    json.dumps(
-        tool_provenance(
-            "singer", 
-            snakemake.params.version["singer"], 
-            singer_parameters,
-        )
-    )
-)
-tables.provenances.add_row(
-    json.dumps(
-        tool_provenance(
-            "polegon", 
-            snakemake.params.version["polegon"], 
-            polegon_parameters,
-        )
+        pipeline_provenance(snakemake.params.version, snakemake.config)
     )
 )
 

@@ -8,7 +8,32 @@ import numpy as np
 import msprime
 import typing
 import tskit
+import subprocess
+import hashlib
 from collections import defaultdict
+
+
+def hash_binary(binary_path: str) -> str:
+    """
+    Generate a checksum for the file at `binary_path`.
+    """
+    hasher = hashlib.sha256()
+    with open(binary_path, "rb") as f:
+        while chunk := f.read(65536):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def git_version(git_dir: str) -> str | None:
+    """
+    Fetch last tag and commit hash from git.
+    """
+    git_commit = subprocess.run(
+        ["git", f"--git-dir={git_dir}", "describe", "--tags", "--always"],
+        capture_output=True,
+    )
+    if git_commit.returncode == 0:
+        return git_commit.stdout.strip().decode('utf-8')
 
 
 def bitmask_to_arrays(bitmask: np.ndarray, *, insert_breakpoints: np.ndarray = None) -> msprime.RateMap:

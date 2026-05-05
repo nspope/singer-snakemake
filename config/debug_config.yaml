@@ -1,4 +1,5 @@
 # --- debug_config.yaml ---
+# NOTE: may change commit to commit
 input-dir: "example" # directory with input files per chromosome, see README
 output-dir: "results" # directory where to place output
 chromosomes: null # a list of chromosomes to use (e.g. "chr1"), if `null` use all `vcf.gz` in `input-dir`

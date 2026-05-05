@@ -16,18 +16,29 @@ import pickle
 import subprocess
 from datetime import datetime
 
+from scripts.utils import hash_binary
+from scripts.utils import git_version
 
-def top_level_info(path: str, config: dict, version_string: str) -> None:
+
+def version_strings(pipeline: str, singer: str, polegon: str) -> dict:
     git_dir = os.path.join(workflow.basedir, os.path.pardir, ".git")
-    git_commit = subprocess.run(
-        ["git", f"--git-dir={git_dir}", "describe", "--tags", "--always"],
-        capture_output=True,
-    )
-    if git_commit.returncode == 0:
-        version_string = git_commit.stdout.strip().decode('utf-8')
+    if version_string := git_version(git_dir): pipeline = version_string
+    return {
+        "pipeline": pipeline,
+        "singer": hash_binary(singer),
+        "polegon": hash_binary(polegon),
+    }
+    
+
+def top_level_info(path: str, config: dict, version_strings: dict) -> None:
+    pipeline = version_strings.get("pipeline")
+    singer = version_strings.get("singer")
+    polegon = version_strings.get("polegon")
     with open(path, "w") as handle:
         handle.write(f"date: {datetime.now()}\n")
-        handle.write(f"version: {version_string}\n")
+        handle.write(f"pipeline: {pipeline}\n")
+        handle.write(f"singer: {singer}\n")
+        handle.write(f"polegon: {polegon}\n")
         handle.write(f"config: {config}\n")
 
 
@@ -36,9 +47,7 @@ def top_level_info(path: str, config: dict, version_string: str) -> None:
 
 # configfile: "config/example_config.yaml"
 
-VERSION = "0.1.1"
-SINGER_VERSION = "0.1.8.beta.013fe1b"  # commit of included SINGER binary
-POLEGON_VERSION = "0.1.3.alpha.0c088b3"  # commit of included POLEGON binary
+VERSION = "0.1.1"  # FIXME: bump on tag
 
 INPUT_DIR = config["input-dir"]
 OUTPUT_DIR = config.get("output-dir", "results")
@@ -86,6 +95,7 @@ POLEGON_BINARY = os.path.join(
    "polegon-0.1.3-alpha-linux-x86_64", "polegon",
 )
 POLEGON_BINARY = config.get("polegon-binary", POLEGON_BINARY)
+VERSION_STRINGS = version_strings(VERSION, SINGER_BINARY, POLEGON_BINARY)
 
 CHROMOSOMES = config.get("chromosomes", None)
 if CHROMOSOMES is None:
@@ -95,6 +105,7 @@ if CHROMOSOMES is None:
 np.random.seed(RAND_SEED)
 SEED_ARRAY = {n:x for n, x in zip(CHROMOSOMES, np.random.randint(2 ** 20, size=len(CHROMOSOMES)))}
 
+INFOS_PATH = os.path.join(OUTPUT_DIR, "info")
 CHROM_PATH = os.path.join(OUTPUT_DIR, "{chrom}")
 PLOTS_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "plots")
 TREES_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "trees")
@@ -106,10 +117,10 @@ STATS_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "stats")
 # ------ rules ------ #
 
 onsuccess: 
-    top_level_info(os.path.join(OUTPUT_DIR, "info"), config, VERSION)
+    top_level_info(INFOS_PATH, config, VERSION_STRINGS)
 
 onerror: 
-    top_level_info(os.path.join(OUTPUT_DIR, "info"), config, VERSION)
+    top_level_info(INFOS_PATH, config, VERSION_STRINGS)
 
 
 rule all:
@@ -295,7 +306,7 @@ rule merge_chunks:
     params:
         min_branch_length = MIN_BRANCH_LENGTH,
         stratify = STRATIFY_BY,
-        version = {"pipeline": VERSION, "singer": SINGER_VERSION, "polegon": POLEGON_VERSION},
+        version = VERSION_STRINGS,
         # for debugging:
         repolarise = config.get("repolarise-ancestral-state", True),
         delete_genealogical_gaps = config.get("delete-genealogical-gaps", True),

@@ -6,6 +6,7 @@
 - Use per-sample masks if provdied; these are always hard-masked leaving trees with varying numbers of tips
 - All outputs in one-based coords; previously ratemaps were zero-based while tree sequences were one-based
 - Option to average coalescence cdf/rates over recombination map rather than bp, which can reduce variance
+- Switch from hardcoded binary versions to checksums in provenance
 
 TODO: 
   * document per-sample-masks paircoal-reweight and ancestral fasta in README
