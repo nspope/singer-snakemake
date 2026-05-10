@@ -1,4 +1,6 @@
-tskit @ git+https://github.com/tskit-dev/tskit.git#subdirectory=python
+# NB: pin to a fork where missing data in coalescence rates is handled correctly.
+# at some point this will be in tskit main, so switch over then.
+tskit @ git+https://github.com/nspope/tskit.git@nsp-paircoal-partial-missing#subdirectory=python
 tszip
 snakemake==9.16.2
 stdpopsim>=0.3.0
