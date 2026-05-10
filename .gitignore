@@ -4,6 +4,7 @@
 .snakemake/
 *.log
 data/
+plans/*
 results/*
 output/*
 .test-workflow/diploid*
