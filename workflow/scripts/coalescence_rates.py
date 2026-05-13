@@ -12,9 +12,9 @@ import numpy as np
 import tszip
 from datetime import datetime
 
-from validation.utils import collapse_masked_intervals
-from utils import multiply_ratemaps 
-from utils import extract_accessible_ratemap
+from validation.utils import transform_coordinates
+from validation.utils import multiply_ratemaps 
+from validation.utils import extract_accessible_ratemap
 
 
 # --- lib --- #
@@ -25,7 +25,10 @@ def tag():
 
 # --- implm --- #
 
+logfile = open(snakemake.log.log, "w")
+
 inaccessible = pickle.load(open(snakemake.input.inaccessible, "rb"))
+recombination_rate = pickle.load(open(snakemake.input.recomb_rate, "rb"))
 ts = tszip.decompress(snakemake.input.trees)
 
 tail_cutoff = snakemake.params.tail_cutoff
@@ -36,20 +39,34 @@ time_windows = np.append(np.append(0, time_windows), np.inf)
 # correct for masked sequence by adjusting edge spans
 accessible = msprime.RateMap(position=inaccessible.position, rate=1 - inaccessible.rate)
 accessible = multiply_ratemaps(accessible, extract_accessible_ratemap(ts))
-ts = collapse_masked_intervals(ts, accessible)
+logfile.write(
+    f"{tag()} Scaling coordinates to remove masked intervals, "
+    f"total length {accessible.total_mass}\n"
+)
+if snakemake.params.use_recombination_units:
+    # this can reduce variance from long-spanning trees in low-recombination regions
+    accessible = multiply_ratemaps(accessible, recombination_rate)
+    logfile.write(
+        f"{tag()} Scaling coordinates by recombination rate, "
+        f"total length {accessible.total_mass}\n"
+    )
+ts = transform_coordinates(ts, accessible)
 
 # global pair coalescence rates
 pdf = ts.pair_coalescence_counts(time_windows=time_windows, pair_normalise=True)
 rates = ts.pair_coalescence_rates(time_windows=time_windows)
 survival = np.append(1, 1 - np.cumsum(pdf))
 rates[survival[:-1] <= tail_cutoff] = np.nan
+logfile.write(
+    f"{tag()} Discarding coalescence rates in windows where "
+    f"proportion of surviving pairs falls below {tail_cutoff}\n"
+)
 output = {
     "rates" : rates[1:-1],
     "pdf" : pdf[1:-1],
     "breaks" : time_windows[1:-2],
 }
 pickle.dump(output, open(snakemake.output.coalrate, "wb"))
-
 
 # stratified global pair coalescence rates (cross-coalescence)
 output = {}
@@ -60,6 +77,10 @@ if snakemake.params.stratify is not None:
         if len(ts.samples(population=i))
     }
     names = np.array(sorted(sample_sets.keys()))
+    logfile.write(
+        f"{tag()} Calculating cross-coalescence rates for strata "
+        f"'{snakemake.params.stratify}':\n{[x for x in names]}\n"
+    )
     sample_sets = [sample_sets[x] for x in names]
     cross_rates = np.full((names.size, names.size, num_intervals), np.nan)
     cross_pdf = np.full((names.size, names.size, num_intervals), np.nan)

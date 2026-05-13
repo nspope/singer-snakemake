@@ -6,7 +6,6 @@ Part of https://github.com/nspope/singer-snakemake.
 
 import msprime
 import os
-import subprocess
 import tskit
 import pickle
 import numpy as np
@@ -17,6 +16,7 @@ from datetime import datetime
 
 from utils import absorb_mutations_above_root
 from utils import find_genealogical_gaps
+from utils import remove_partial_ancestry
 
 
 # --- lib --- #
@@ -26,14 +26,6 @@ def tag():
 
 
 def pipeline_provenance(version_string, parameters):
-    git_dir = os.path.join(snakemake.scriptdir, os.path.pardir, os.path.pardir, ".git")
-    git_commit = subprocess.run(
-        ["git", f"--git-dir={git_dir}", "describe", "--always"],
-        capture_output=True,
-    )
-    if git_commit.returncode == 0:
-        git_commit = git_commit.stdout.strip().decode('utf-8')
-        version_string = f"{version_string}.{git_commit}"
     return {
         "software": {"name": "singer-snakemake", "version": version_string},
         "parameters": snakemake.config,
@@ -41,18 +33,9 @@ def pipeline_provenance(version_string, parameters):
     }
 
 
-def tool_provenance(name, version_string, parameters):
-    return {
-        "software": {"name": name, "version": version_string},
-        "parameters": parameters,
-        "environment": tskit.provenance.get_environment(),
-    }
-
-
 def force_positive_branch_lengths(nodes_time, edges_parent, edges_child, min_length=1e-7):
     adj_nodes_time = nodes_time.copy()
-    #edge_traversal_order = np.argsort(adj_nodes_time[edges_child], kind="stable")
-    # assume that parents come after children in node ordering in SINGER output
+    # NOTE: assume that parents come after children in node ordering in SINGER output
     edge_traversal_order = np.argsort(edges_child)
     for e in edge_traversal_order:
         p, c = edges_parent[e], edges_child[e]
@@ -88,8 +71,6 @@ tables.individuals.metadata_schema = tskit.MetadataSchema.permissive_json()
 tables.populations.metadata_schema = tskit.MetadataSchema.permissive_json()
 tables.mutations.metadata_schema = tskit.MetadataSchema.permissive_json()
 
-singer_parameters = []
-polegon_parameters = []
 population_map = {}
 num_nodes, num_samples = 0, 0
 files = zip(
@@ -103,10 +84,6 @@ for i, (params_file, recomb_file, node_file, mutation_file, branch_file) in enum
 
     params = yaml.safe_load(open(params_file))
     block_start = params['singer']['start']
-    if snakemake.params.record_chunk_provenance:
-        # FIXME: use dicts not lists
-        singer_parameters.append(params['singer'])
-        polegon_parameters.append(params['polegon'])
 
     logfile.write(f"{tag()} Converting chunk {i} with params: {params}\n")
     if os.path.getsize(node_file) == 0:
@@ -207,25 +184,7 @@ tables.mutations.set_columns(
 # add provenance recording how tree sequence was generated
 tables.provenances.add_row(
     json.dumps(
-        pipeline_provenance(snakemake.params.version["pipeline"], snakemake.config)
-    )
-)
-tables.provenances.add_row(
-    json.dumps(
-        tool_provenance(
-            "singer", 
-            snakemake.params.version["singer"], 
-            singer_parameters,
-        )
-    )
-)
-tables.provenances.add_row(
-    json.dumps(
-        tool_provenance(
-            "polegon", 
-            snakemake.params.version["polegon"], 
-            polegon_parameters,
-        )
+        pipeline_provenance(snakemake.params.version, snakemake.config)
     )
 )
 
@@ -268,6 +227,28 @@ if snakemake.params.repolarise:
         f"{tag()} Absorbed {prev_num_mutations - ts.num_mutations} mutations "
         f"above the root, switching the ancestral state at these sites\n"
     )
+
+# delete partial ancestry from sample node masks
+if snakemake.params.delete_imputed_intervals:
+    node_masks = pickle.load(open(snakemake.input.node_masks, "rb"))
+    if node_masks:
+        logfile.write(
+            f"{tag()} Removing masked intervals that are specific to {len(node_masks)} "
+            f"sample nodes, as well as shared ancestry in these intervals\n"
+        )
+        prev_num_edges, prev_num_trees = ts.num_edges, ts.num_trees
+        prev_num_sites, prev_num_mutations = ts.num_sites, ts.num_mutations
+        ts = remove_partial_ancestry(ts, node_masks)
+        logfile.write(
+            f"{tag()} Deleting per-sample masks changed the number of edges from "
+            f"{prev_num_edges} to {ts.num_edges} and the number of trees from "
+            f"{prev_num_trees} to {ts.num_trees}\n"
+        )
+        logfile.write(
+            f"{tag()} Deleting per-sample masks changed the number of sites from "
+            f"{prev_num_sites} to {ts.num_sites} and the number of mutations from "
+            f"{prev_num_mutations} to {ts.num_mutations}\n"
+        )
 
 # delete masked intervals that are not spanned by any edge
 if snakemake.params.delete_genealogical_gaps:

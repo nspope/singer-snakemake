@@ -16,14 +16,38 @@ import pickle
 import subprocess
 from datetime import datetime
 
+from scripts.utils import hash_binary
+from scripts.utils import git_version
+
+
+def version_strings(pipeline: str, singer: str, polegon: str) -> dict:
+    git_dir = os.path.join(workflow.basedir, os.path.pardir, ".git")
+    if version_string := git_version(git_dir): pipeline = version_string
+    return {
+        "pipeline": pipeline,
+        "singer": hash_binary(singer),
+        "polegon": hash_binary(polegon),
+    }
+    
+
+def top_level_info(path: str, config: dict, version_strings: dict) -> None:
+    pipeline = version_strings.get("pipeline")
+    singer = version_strings.get("singer")
+    polegon = version_strings.get("polegon")
+    with open(path, "w") as handle:
+        handle.write(f"date: {datetime.now()}\n")
+        handle.write(f"pipeline: {pipeline}\n")
+        handle.write(f"singer: {singer}\n")
+        handle.write(f"polegon: {polegon}\n")
+        handle.write(f"config: {config}\n")
+
+
 
 # ------ config ------ #
 
 # configfile: "config/example_config.yaml"
 
-VERSION = "0.1.1"
-SINGER_VERSION = "0.1.8.beta.013fe1b"  # commit of included SINGER binary
-POLEGON_VERSION = "0.1.3.alpha.0c088b3"  # commit of included POLEGON binary
+VERSION = "0.1.1"  # FIXME: bump on tag
 
 INPUT_DIR = config["input-dir"]
 OUTPUT_DIR = config.get("output-dir", "results")
@@ -39,6 +63,7 @@ MIN_SITES = float(config["min-sites"])
 MAX_MISSING = float(config["max-missing"])
 MIN_GAP_SIZE = float(config["min-gap-size"])
 MIN_BRANCH_LENGTH = float(config["min-branch-length"])
+MAX_MASKED_SAMPLES = int(config.get("max-masked-samples", 0))  # FIXME: hidden in config
 
 SINGER_MCMC_THIN = int(config["singer-mcmc-thin"])
 SINGER_MCMC_SAMPLES = int(config["singer-mcmc-samples"])
@@ -57,6 +82,7 @@ assert POLEGON_MCMC_BURNIN < POLEGON_MCMC_SAMPLES, "Burn-in exceeds number of PO
 
 STATS_TIME_GRID = config["stats-time-grid"]
 STATS_WINDOW_SIZE = float(config["stats-window-size"])
+PAIRCOAL_REWEIGHT = config.get("paircoal-reweight", False)  # FIXME: hidden in config
 
 # use a modified SINGER binary that allows per-site polarisation
 SINGER_BINARY = os.path.join(
@@ -69,6 +95,7 @@ POLEGON_BINARY = os.path.join(
    "polegon-0.1.3-alpha-linux-x86_64", "polegon",
 )
 POLEGON_BINARY = config.get("polegon-binary", POLEGON_BINARY)
+VERSION_STRINGS = version_strings(VERSION, SINGER_BINARY, POLEGON_BINARY)
 
 CHROMOSOMES = config.get("chromosomes", None)
 if CHROMOSOMES is None:
@@ -78,6 +105,7 @@ if CHROMOSOMES is None:
 np.random.seed(RAND_SEED)
 SEED_ARRAY = {n:x for n, x in zip(CHROMOSOMES, np.random.randint(2 ** 20, size=len(CHROMOSOMES)))}
 
+INFOS_PATH = os.path.join(OUTPUT_DIR, "info")
 CHROM_PATH = os.path.join(OUTPUT_DIR, "{chrom}")
 PLOTS_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "plots")
 TREES_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "trees")
@@ -85,7 +113,15 @@ CHUNK_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "chunks")
 STATS_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "stats")
 
 
+
 # ------ rules ------ #
+
+onsuccess: 
+    top_level_info(INFOS_PATH, config, VERSION_STRINGS)
+
+onerror: 
+    top_level_info(INFOS_PATH, config, VERSION_STRINGS)
+
 
 rule all:
     input:
@@ -95,10 +131,6 @@ rule all:
         ),
         diversity_scatter = expand(
             os.path.join(PLOTS_PATH, "diversity-scatter.png"), 
-            chrom=CHROMOSOMES,
-        ),
-        pair_coalescence_pdf = expand(
-            os.path.join(PLOTS_PATH, "pair-coalescence-pdf.png"), 
             chrom=CHROMOSOMES,
         ),
         pair_coalescence_rates = expand(
@@ -121,12 +153,11 @@ checkpoint chunk_chromosomes:
         chunks_check = touch(os.path.join(CHROM_PATH, "chunks.done")),
         # TODO: mark VCF temp, but need to include as input to SINGER to make persistant
         vcf = os.path.join(CHROM_PATH, "{chrom}.vcf"),
-        vcf_stats = os.path.join(CHROM_PATH, "{chrom}.vcf.stats.p"),
-        vcf_strata_stats = os.path.join(CHROM_PATH, "{chrom}.vcf.strata_stats.p"),
         mut_rate = os.path.join(CHROM_PATH, "{chrom}.mut_rate.p"),
         recomb_rate = os.path.join(CHROM_PATH, "{chrom}.recomb_rate.p"),
         inaccessible = os.path.join(CHROM_PATH, "{chrom}.inaccessible.p"),
         polarisation = os.path.join(CHROM_PATH, "{chrom}.polarisation"),
+        node_masks = os.path.join(CHROM_PATH, "{chrom}.nodemask.p"),
         filtered = os.path.join(CHROM_PATH, "{chrom}.filtered.p"),
         omitted = os.path.join(CHROM_PATH, "{chrom}.omitted.p"),
         metadata = os.path.join(CHROM_PATH, "{chrom}.vcf.samples.p"),
@@ -137,12 +168,14 @@ checkpoint chunk_chromosomes:
     log:
         log = os.path.join(CHROM_PATH, "{chrom}.log"),
     params:
+        chunks_dir = CHUNK_PATH,
         seed = lambda w: SEED_ARRAY[w.chrom],
         max_chunk_size = MAX_CHUNK_SIZE,
         min_chunk_size = MIN_CHUNK_SIZE,
         max_missing = MAX_MISSING,
         min_sites = MIN_SITES,
         min_gap_size = MIN_GAP_SIZE,
+        max_masked_samples = MAX_MASKED_SAMPLES,
         mutation_rate = MUTATION_RATE,
         recombination_rate = RECOMBINATION_RATE,
         polarised = POLARISED,
@@ -159,7 +192,7 @@ checkpoint chunk_chromosomes:
         model_masked_sequence = config.get("model-masked-sequence", True),
         random_polarisation = config.get("random-polarisation", True),
         remove_unpolarised = config.get("remove-unpolarised", False),
-        chunks_dir = CHUNK_PATH
+        impute_sample_masks = config.get("impute-sample-masks", True),
     script:
         "scripts/chunk_chromosomes.py"
 
@@ -210,6 +243,8 @@ rule run_polegon:
         nodes = os.path.join(CHUNK_PATH, "{id}_nodes_{rep}.txt"),
         muts = os.path.join(CHUNK_PATH, "{id}_muts_{rep}.txt"),
         omitted = rules.chunk_chromosomes.output.omitted,
+        node_masks = rules.chunk_chromosomes.output.node_masks,
+        mut_rate = rules.chunk_chromosomes.output.mut_rate,
     output:  
         # TODO mark temp
         nodes = os.path.join(CHUNK_PATH, "{id}_polegon_{rep}.txt"),
@@ -219,6 +254,8 @@ rule run_polegon:
         use_polegon = config.get("use-polegon", True),
         use_mutational_span = config.get("use-mutational-span", True),
         drop_omitted = config.get("drop-omitted", True),
+        skip_node_masks = config.get("skip-node-masks", False),
+        remove_polegon_inputs = config.get("remove-polegon-inputs", True),
     log:
         log = os.path.join(CHUNK_PATH, "{id}.{rep}.log"),
     script:
@@ -256,6 +293,7 @@ rule merge_chunks:
         omitted = rules.chunk_chromosomes.output.omitted,
         metadata = rules.chunk_chromosomes.output.metadata,
         alleles = rules.chunk_chromosomes.output.alleles,
+        node_masks = rules.chunk_chromosomes.output.node_masks,
         params = merge_chunks_params,
         recombs = lambda w: merge_chunks_input(w, "recombs"),
         muts = lambda w: merge_chunks_input(w, "muts"),
@@ -268,17 +306,40 @@ rule merge_chunks:
     params:
         min_branch_length = MIN_BRANCH_LENGTH,
         stratify = STRATIFY_BY,
-        version = {"pipeline": VERSION, "singer": SINGER_VERSION, "polegon": POLEGON_VERSION},
+        version = VERSION_STRINGS,
         # for debugging:
         repolarise = config.get("repolarise-ancestral-state", True),
         delete_genealogical_gaps = config.get("delete-genealogical-gaps", True),
         delete_masked_intervals = config.get("delete-masked-intervals", False),
+        delete_imputed_intervals = config.get("delete-imputed-intervals", True),
         record_chunk_provenance = config.get("record-chunk-provenance", True),
     script:
         "scripts/merge_chunks.py"
         
 
-rule tree_statistics:
+rule observed_tree_statistics:
+    """
+    Calculate observed summary statistics across MCMC iterations. These
+    could change across iterations due to repolarisation.
+    """
+    input:
+        mut_rate = rules.chunk_chromosomes.output.mut_rate,
+        inaccessible = rules.chunk_chromosomes.output.inaccessible,
+        windows = rules.chunk_chromosomes.output.windows,
+        alleles = rules.chunk_chromosomes.output.alleles,
+        trees = rules.merge_chunks.output.trees,
+    output:
+        stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.observed_stats.p"),
+        strata_stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.observed_strata_stats.p"),
+    params:
+        stratify = STRATIFY_BY,
+        polarised = POLARISED,
+        simulate_mutations = False,
+    script:
+        "scripts/tree_statistics.py"
+
+
+rule expected_tree_statistics:
     """
     Calculate expected summary statistics across MCMC iterations.
     """
@@ -289,11 +350,11 @@ rule tree_statistics:
         alleles = rules.chunk_chromosomes.output.alleles,
         trees = rules.merge_chunks.output.trees,
     output:
-        stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.stats.p"),
-        strata_stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.strata_stats.p"),
+        stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.expected_stats.p"),
+        strata_stats = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.expected_strata_stats.p"),
     params:
         stratify = STRATIFY_BY,
-        polarised = POLARISED,
+        simulate_mutations = True,
     script:
         "scripts/tree_statistics.py"
 
@@ -314,26 +375,29 @@ rule diagnostics:
     """
     input:
         windows = rules.chunk_chromosomes.output.windows,
-        vcf_stats = rules.chunk_chromosomes.output.vcf_stats,
-        vcf_strata_stats = rules.chunk_chromosomes.output.vcf_strata_stats,
-        stats = lambda w: diagnostics_input(w, "stats"),
-        strata_stats = lambda w: diagnostics_input(w, "strata_stats"),
+        expected_stats = lambda w: diagnostics_input(w, "expected_stats"),
+        expected_strata_stats = lambda w: diagnostics_input(w, "expected_strata_stats"),
+        observed_stats = lambda w: diagnostics_input(w, "observed_stats"),
+        observed_strata_stats = lambda w: diagnostics_input(w, "observed_strata_stats"),
     output:
         diversity_scatter = os.path.join(PLOTS_PATH, "diversity-scatter.png"),
         diversity_trace = os.path.join(PLOTS_PATH, "diversity-trace.png"),
         diversity_skyline = os.path.join(PLOTS_PATH, "diversity-skyline.png"),
+        segsites_scatter = os.path.join(PLOTS_PATH, "segsites-scatter.png"),
+        segsites_trace = os.path.join(PLOTS_PATH, "segsites-trace.png"),
+        segsites_skyline = os.path.join(PLOTS_PATH, "segsites-skyline.png"),
         tajima_d_scatter = os.path.join(PLOTS_PATH, "tajima-d-scatter.png"),
         tajima_d_trace = os.path.join(PLOTS_PATH, "tajima-d-trace.png"),
         tajima_d_skyline = os.path.join(PLOTS_PATH, "tajima-d-skyline.png"),
         mutational_load = os.path.join(PLOTS_PATH, "mutational-load.png"),
         mutational_load_trace = os.path.join(PLOTS_PATH, "mutational-load-trace.png"),
         repolarised_trace = os.path.join(PLOTS_PATH, "repolarised-trace.png"),
+        multimapped_trace = os.path.join(PLOTS_PATH, "multimapped-trace.png"),
         frequency_spectrum = os.path.join(PLOTS_PATH, "frequency-spectrum.png"),
     params:
         mcmc_samples = SINGER_MCMC_SAMPLES,
         mcmc_thin = SINGER_MCMC_THIN,
         mcmc_burnin = SINGER_MCMC_BURNIN,
-        polarised = POLARISED,
         stratify = STRATIFY_BY,
         confidence_level = 0.0,
     script:
@@ -346,13 +410,17 @@ rule coalescence_rates:
     """
     input:
         inaccessible = rules.chunk_chromosomes.output.inaccessible,
+        recomb_rate = rules.chunk_chromosomes.output.recomb_rate,
         trees = rules.merge_chunks.output.trees,
     output:
         coalrate = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.coalrate.p"),
         crossrate = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.crossrate.p"),
+    log:
+        log = os.path.join(STATS_PATH, "{chrom}.{rep,[0-9]+}.coalrate.log"),
     params:
         time_grid = STATS_TIME_GRID,
         stratify = STRATIFY_BY,
+        use_recombination_units = PAIRCOAL_REWEIGHT,
         # for debugging:
         tail_cutoff = config.get("coalrate-tail-cutoff", 0.05),
     script:

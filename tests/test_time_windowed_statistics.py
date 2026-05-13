@@ -8,9 +8,9 @@ import numpy as np
 import msprime
 import tskit
 import pytest
-from workflow.validation.utils import time_windowed_relatedness
-from workflow.validation.utils import time_windowed_afs
-from workflow.validation.utils import ancestral_state_and_frequency
+from workflow.scripts.validation.utils import time_windowed_relatedness
+from workflow.scripts.validation.utils import time_windowed_afs
+from workflow.scripts.validation.utils import ancestral_state_and_frequency
 
 
 @pytest.mark.parametrize("populations", [1, 2, 3])

@@ -1,17 +1,27 @@
 import numpy as np
 import msprime
+import pickle
 import itertools
 import tszip
 
-from utils import collapse_masked_intervals
+from utils import transform_coordinates
+from utils import multiply_ratemaps
+from utils import extract_accessible_ratemap
 
 
 time_windows = np.append(0, snakemake.params.time_grid)
 inaccessible = pickle.load(open(snakemake.input.inaccessible, "rb"))
-accessible = msprime.RateMap(position=inaccessible.position, rate=1 - inaccessible.rate)
+recombination_rate = pickle.load(open(snakemake.input.recombination_rate, "rb"))
 treefiles = iter(snakemake.input.trees)
 
-ts = collapse_masked_intervals(tszip.load(next(treefiles)), accessible)
+def transform(ts):
+    accessible = msprime.RateMap(position=inaccessible.position, rate=1 - inaccessible.rate)
+    accessible = multiply_ratemaps(accessible, extract_accessible_ratemap(ts))
+    if snakemake.params.use_recombination_units:
+        accessible = multiply_ratemaps(accessible, recombination_rate)
+    return transform_coordinates(ts, accessible)
+
+ts = transform(tszip.load(next(treefiles)))
 sample_populations = np.unique([ts.nodes_population[i] for i in ts.samples()])
 sample_sets = [ts.samples(population=p) for p in sample_populations]
 num_sample_sets = len(sample_sets)
@@ -30,7 +40,7 @@ pair_rates = ts.pair_coalescence_rates(
     time_windows=time_windows, 
 ).reshape(dim)
 for trees in treefiles:
-    ts = collapse_masked_intervals(tszip.load(trees), accessible)
+    ts = transform(tszip.load(trees))
     pair_density += ts.pair_coalescence_counts(
         sample_sets=sample_sets, 
         indexes=indexes,

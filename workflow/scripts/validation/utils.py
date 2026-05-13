@@ -232,12 +232,22 @@ def repolarise_tree_sequence(
         if repolarise[site.id] and biallelic:
             mutation = next(iter(site.mutations))
             for r in tree.roots:
-                tab.mutations.add_row(site=site.id, node=r, derived_state=site.ancestral_state)
+                tab.mutations.add_row(
+                    site=site.id, 
+                    node=r, 
+                    derived_state=site.ancestral_state,
+                    time=tree.time(r),
+                )
             tab.sites.add_row(position=site.position, ancestral_state=mutation.derived_state)
         else:
             tab.sites.add_row(position=site.position, ancestral_state=site.ancestral_state)
         for mutation in site.mutations:
-            tab.mutations.add_row(site=mutation.site, node=mutation.node, derived_state=mutation.derived_state)
+            tab.mutations.add_row(
+                site=mutation.site, 
+                node=mutation.node, 
+                derived_state=mutation.derived_state,
+                time=mutation.time,
+            )
     tab.sort()
     tab.build_index()
     tab.compute_mutation_parents()
@@ -246,23 +256,62 @@ def repolarise_tree_sequence(
     return tab.tree_sequence()
 
 
-def collapse_masked_intervals(
+def multiply_ratemaps(ratemap: msprime.RateMap, other: msprime.RateMap) -> msprime.RateMap:
+    """
+    Create a new set of intervals from the intersection of two ratemaps, and then take the 
+    product of the rates in each interval.
+    """
+    assert ratemap.sequence_length == other.sequence_length
+    new_position = np.unique(np.append(ratemap.position, other.position))
+    assert new_position[0] == 0.0 and new_position[-1] == ratemap.sequence_length
+    new_rate = ratemap.get_rate(new_position[:-1]) * other.get_rate(new_position[:-1])
+    new_ratemap = msprime.RateMap(position=new_position, rate=new_rate)
+    return new_ratemap
+
+
+# FIXME: this is duplicated from higher-level utils for import scope reasons
+# should port dependent functions to this scope
+def compactify_run_length_encoding(breaks: np.ndarray, values: np.ndarray) -> (np.ndarray, np.ndarray):
+    """
+    Combine adjacent runs in a run length encoding if they have the same value
+    """
+    assert breaks.size == values.size + 1
+    left, right = breaks[:-1], breaks[1:]
+    changepoints = np.append(True, values[1:] != values[:-1])
+    new_breaks = np.append(left[changepoints], right[-1])
+    new_values = values[changepoints]
+    return new_breaks, new_values
+
+
+def extract_accessible_ratemap(ts: tskit.TreeSequence) -> msprime.RateMap:
+    """
+    Return a ratemap where the rate is zero over masked segments in the tree
+    sequence, and one otherwise.
+    """
+    breakpoints = ts.breakpoints(as_array=True)
+    accessible = np.array([t.num_edges > 0 for t in ts.trees()])
+    new_breakpoints, new_accessible = compactify_run_length_encoding(breakpoints, accessible)
+    ratemap = msprime.RateMap(position=new_breakpoints, rate=new_accessible)
+    return ratemap
+
+
+def transform_coordinates(
     ts: tskit.TreeSequence, 
-    accessible: msprime.RateMap,
+    ratemap: msprime.RateMap,
 ) -> tskit.TreeSequence:
     """
-    Return a copy of the tree sequence with masked intervals (where `accessible.rate == 0.0`)
-    collapsed, so that the coordinate system is in terms of unmasked sequence length.
-    Zero length edges are removed, and any nodes that are then disconnected are removed as well.
-    All sites and mutations that are within the collapsed intervals are removed.
+    Return a copy of the tree sequence `ts` with the coordinate system
+    monotonically transformed according to `ratemap.get_cumulative_mass(x)`.
+    Zero length edges are removed, and any nodes that are then disconnected are
+    removed as well.  All sites and mutations that are within zero- or NaN-rate
+    regions are removed.
     """
-    assert np.all(np.logical_or(accessible.rate == 0.0, accessible.rate == 1.0))
-    assert accessible.sequence_length == ts.sequence_length
+    assert ratemap.sequence_length == ts.sequence_length
     tab = ts.dump_tables()
-    tab.sequence_length = accessible.get_cumulative_mass(ts.sequence_length)
+    tab.sequence_length = ratemap.get_cumulative_mass(ts.sequence_length)
     # map edges to new coordinate system and remove those with zero length
-    tab.edges.left = accessible.get_cumulative_mass(tab.edges.left)
-    tab.edges.right = accessible.get_cumulative_mass(tab.edges.right)
+    tab.edges.left = ratemap.get_cumulative_mass(tab.edges.left)
+    tab.edges.right = ratemap.get_cumulative_mass(tab.edges.right)
     tab.edges.keep_rows(tab.edges.right > tab.edges.left)
     # remove disconnected nodes
     is_connected = np.full(tab.nodes.num_rows, False)
@@ -272,8 +321,9 @@ def collapse_masked_intervals(
     tab.edges.parent = node_map[tab.edges.parent]
     tab.edges.child = node_map[tab.edges.child]
     # map sites to new coordinate system and remove those in masked intervals
-    site_map = tab.sites.keep_rows(accessible.get_rate(tab.sites.position).astype(bool))
-    tab.sites.position = accessible.get_cumulative_mass(tab.sites.position)
+    site_rate = ratemap.get_rate(tab.sites.position)
+    site_map = tab.sites.keep_rows(np.nan_to_num(site_rate).astype(bool))
+    tab.sites.position = ratemap.get_cumulative_mass(tab.sites.position)
     # update mutation pointers and remove those without a node or site
     tab.mutations.node = node_map[tab.mutations.node]
     tab.mutations.site = site_map[tab.mutations.site]
@@ -286,6 +336,19 @@ def collapse_masked_intervals(
     tab.sort()
     tab.build_index()
     tab.compute_mutation_parents()
+    return tab.tree_sequence()
+
+
+def one_shift_coordinates(ts: tskit.TreeSequence) -> tskit.TreeSequence:
+    """
+    Transform tree sequence from zero-based to one-based coordinates, leaving
+    a one-bp empty "buffer" at position zero.
+    """
+    tab = ts.dump_tables()
+    tab.sequence_length = ts.sequence_length + 1
+    tab.edges.left = tab.edges.left + 1
+    tab.edges.right = tab.edges.right + 1
+    tab.sites.position = tab.sites.position + 1
     return tab.tree_sequence()
 
 

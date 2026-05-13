@@ -73,7 +73,7 @@ else:
     axs[0, 0].legend()
 fig.tight_layout()
 plt.subplots_adjust(hspace=0.2, wspace=0.2)
-plt.savefig(snakemake.output.pair_den_plot)
+plt.savefig(snakemake.output.pair_dens_plot)
 plt.clf()
 
 # plot pair coalescence rates
@@ -110,5 +110,5 @@ else:
     axs[0, 0].legend()
 fig.tight_layout()
 plt.subplots_adjust(hspace=0.2, wspace=0.2)
-plt.savefig(snakemake.output.pair_rat_plot)
+plt.savefig(snakemake.output.pair_rate_plot)
 plt.clf()

@@ -3,6 +3,14 @@
 - Use ancestral states if provided as fasta; sites with ambiguous ancestral states are treated as unpolarised
 - Include a custom version of SINGER binary that allows per-site polarisation
 - Add `singer-skip-failures` flag that will treat chunks where MCMC fails as missing and still produce output
+- Use per-sample masks if provdied; these are always hard-masked leaving trees with varying numbers of tips
+- All outputs in one-based coords; previously ratemaps were zero-based while tree sequences were one-based
+- Option to average coalescence cdf/rates over recombination map rather than bp, which can reduce variance
+- Switch from hardcoded binary versions to checksums in provenance
+
+TODO: 
+  * document per-sample-masks paircoal-reweight and ancestral fasta in README
+  * expose hard-masking
 
 # 3-Mar-26 [0.1.1]
 

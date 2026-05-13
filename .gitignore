@@ -1,5 +1,6 @@
 *.swp
 *.swo
+*.swn
 .snakemake/
 *.log
 data/
@@ -15,4 +16,6 @@ results-*/
 output-*/
 validation-*/
 ablation-*/
+paircoal-weighting-*/
 TODO
+CLAUDE.md
