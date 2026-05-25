@@ -7,8 +7,7 @@ data/
 plans/*
 results/*
 output/*
-.test-workflow/diploid*
-.test-workflow/haploid*
+config/haploid_config.yaml
 __pycache__/
 
 # misc outputs from debugging

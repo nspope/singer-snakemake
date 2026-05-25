@@ -81,10 +81,12 @@ def read_single_fasta(handle: typing.IO) -> None:
     return np.fromiter(sequence, dtype="<U1")
 
 
-def write_minimal_vcf(handle, sample_names, CHROM, POS, ID, REF, ALT, GT): 
+# FIXME: typing
+def write_minimal_vcf(handle, sample_names, CHROM, POS, ID, REF, ALT, GT, ploidy): 
     """
-    Write a minimal biallelic diploid VCF
+    Write a minimal biallelic VCF
     """
+    assert ploidy == 1 or ploidy == 2
     assert CHROM.size == POS.size == ID.size == REF.size
     assert ALT.ndim == 1 and ALT.size == CHROM.size
     assert GT.shape[0] == CHROM.size and GT.shape[1] == sample_names.size and GT.shape[2] == 2
@@ -99,7 +101,8 @@ def write_minimal_vcf(handle, sample_names, CHROM, POS, ID, REF, ALT, GT):
     code = lambda x: "." if x < 0 else x
     for chrom, pos, id, ref, alt, gt in zip(CHROM, POS, ID, REF, ALT, GT):
         handle.write(f"{chrom}\t{pos}\t{id}\t{ref}\t{alt}\t.\tPASS\t.\tGT")
-        for (a, b) in gt: handle.write(f"\t{code(a)}|{code(b)}")
+        for (a, b) in gt: 
+            handle.write(f"\t{code(a)}|{code(b)}" if ploidy == 2 else f"\t{code(a)}")
         handle.write("\n")
 
 

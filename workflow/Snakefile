@@ -87,7 +87,7 @@ PAIRCOAL_REWEIGHT = config.get("paircoal-reweight", False)  # FIXME: hidden in c
 # use a modified SINGER binary that allows per-site polarisation
 SINGER_BINARY = os.path.join(
    workflow.basedir, os.path.pardir, "resources", 
-   "singer-0.1.8-beta-linux-x86_64", "singer-custom",
+   "singer-0.1.9-beta-linux-x86_64", "singer-custom",
 )
 SINGER_BINARY = config.get("singer-binary", SINGER_BINARY)
 POLEGON_BINARY = os.path.join(

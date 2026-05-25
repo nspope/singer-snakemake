@@ -21,9 +21,63 @@ def test_read_single_fasta():
         read_single_fasta(StringIO("foo"))
 
 
-@pytest.mark.skip("TODO")
-def test_write_minimal_vcf():
-    assert False
+def test_write_minimal_vcf_diploid():
+    sample_names = np.array(["sA", "sB", "sC"])
+    CHROM = np.array(["chr1", "chr1", "chr1"])
+    POS = np.array([100, 200, 300], dtype=np.int64)
+    ID = np.array(["v0", "v1", "v2"])
+    REF = np.array(["A", "C", "G"])
+    ALT = np.array(["T", "G", "A"])
+    GT = np.array([
+        [[ 0, 1], [1,  0], [ 0,  0]],
+        [[ 1, 1], [0,  0], [ 1,  1]],
+        [[-1, 0], [1, -1], [-1, -1]],
+    ]).astype(np.int8)
+    # diploid 
+    buffer = StringIO()
+    write_minimal_vcf(buffer, sample_names, CHROM, POS, ID, REF, ALT, GT, ploidy=2)
+    lines = buffer.getvalue().splitlines()
+    assert lines[0] == "##fileformat=VCFv4.2"
+    assert lines[1].startswith("##source=")
+    assert lines[2] == '##FILTER=<ID=PASS,Description="All filters passed">'
+    assert lines[3] == '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">'
+    cols = lines[4].split("\t")
+    assert cols[:9] == ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT"]
+    assert cols[9:] == ["sA", "sB", "sC"]
+    row0 = lines[5].split("\t")
+    assert row0[:9] == ["chr1", "100", "v0", "A", "T", ".", "PASS", ".", "GT"]
+    assert row0[9:] == ["0|1", "1|0", "0|0"]
+    row1 = lines[6].split("\t")
+    assert row1[:5] == ["chr1", "200", "v1", "C", "G"]
+    assert row1[9:] == ["1|1", "0|0", "1|1"]
+    row2 = lines[7].split("\t")
+    assert row2[:5] == ["chr1", "300", "v2", "G", "A"]
+    assert row2[9:] == [".|0", "1|.", ".|."]
+    assert len(lines) == 8
+    # haploid
+    sample_names = np.array(["sA", "sB", "sC", "sD", "sE", "sF"])
+    GT = np.concatenate([GT[..., 0], GT[..., 1]], axis=1)
+    GT = np.stack([GT, -np.ones_like(GT)], axis=-1)
+    buffer = StringIO()
+    write_minimal_vcf(buffer, sample_names, CHROM, POS, ID, REF, ALT, GT, ploidy=1)
+    lines = buffer.getvalue().splitlines()
+    assert lines[0] == "##fileformat=VCFv4.2"
+    assert lines[1].startswith("##source=")
+    assert lines[2] == '##FILTER=<ID=PASS,Description="All filters passed">'
+    assert lines[3] == '##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">'
+    cols = lines[4].split("\t")
+    assert cols[:9] == ["#CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT"]
+    assert cols[9:] == ["sA", "sB", "sC", "sD", "sE", "sF"]
+    row0 = lines[5].split("\t")
+    assert row0[:9] == ["chr1", "100", "v0", "A", "T", ".", "PASS", ".", "GT"]
+    assert row0[9:] == ["0", "1", "0", "1", "0", "0"]
+    row1 = lines[6].split("\t")
+    assert row1[:5] == ["chr1", "200", "v1", "C", "G"]
+    assert row1[9:] == ["1", "0", "1", "1", "0", "1"]
+    row2 = lines[7].split("\t")
+    assert row2[:5] == ["chr1", "300", "v2", "G", "A"]
+    assert row2[9:] == [".", "1", ".", "0", ".", "."]
+    assert len(lines) == 8
 
 
 def test_parse_sample_bedmask(tmp_path):

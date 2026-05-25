@@ -226,23 +226,19 @@ if samplemask:
     for (a, b) in samplemask_inaccessible: bitmask[a:b] = True
 
 
-# convert to diploid VCF if necessary
-# FIXME: SINGER 0.1.9 supports haploid input, switch over
+# copy sample masks across haplotypes if diploid
 nodemask = {}
 assert calldata.shape[2] == 2
 ploidy = 1 if np.all(calldata[..., 1] == -1) else 2
 if ploidy == 1:
-    logfile.write(f"{tag()} VCF is haploid, converting to diploid for SINGER\n")
-    assert samples.size % 2 == 0, "VCF is haploid with an odd number of samples: cannot diploidize"
-    samples = np.array([f"{a}_{b}" for a, b in zip(samples[::2], samples[1::2])], dtype=StringDType)
-    calldata = calldata[..., 0].reshape(-1, samples.size, 2)
+    logfile.write(f"{tag()} VCF is haploid\n")
     if samplemask:
-        logfile.write(f"{tag()} VCF is diploidized, keeping one sample mask per haplotype\n")
         for i in samplemask:
             nodemask[i] = samplemask[i]
 else:
+    logfile.write(f"{tag()} VCF is diploid\n")
     if samplemask:
-        logfile.write(f"{tag()} VCF is diploid, duplicating sample masks across haplotypes\n")
+        logfile.write(f"{tag()} Duplicating sample mask across haplotypes\n")
         for i in samplemask:
             nodemask[2 * i] = samplemask[i]
             nodemask[2 * i + 1] = samplemask[i]
@@ -256,7 +252,7 @@ if snakemake.params.impute_sample_masks and nodemask:
         sample_bitmask = np.full(bitmask.size, False)
         for (a, b) in intervals: sample_bitmask[a:b] = True
         to_impute[i] = np.flatnonzero(sample_bitmask[positions - 1])
-        calldata[to_impute[i], i // 2, i % 2] = -1
+        calldata[to_impute[i], i // ploidy, i % ploidy] = -1
         logfile.write(f"{tag()} Imputing {to_impute[i].size} variants in sample mask for haplotype {i}\n")
 
     imputation_counts = allel.GenotypeArray(calldata).count_alleles(max_allele=1)
@@ -264,7 +260,7 @@ if snakemake.params.impute_sample_masks and nodemask:
     allele_frequency = np.where(total_counts > 0, imputation_counts[:, 1] / total_counts, 0.0)
     for i in nodemask:
         imputations = rng.binomial(1, allele_frequency[to_impute[i]])
-        calldata[to_impute[i], i // 2, i % 2] = imputations
+        calldata[to_impute[i], i // ploidy, i % ploidy] = imputations
 # NOTE: if imputation is disabled, then whatever the genotypes are on input will be
 # processed as usual. That is, if the genotypes are coded as missing they will
 # be dropped, and if they are coded as nonmissing then they will be used by
@@ -296,7 +292,7 @@ filter_segregating = counts.is_segregating()
 logfile.write(f"{tag()} Removed {np.sum(~filter_segregating)} non-segregating sites\n")
 filter_biallelic = counts[:, 2:].sum(axis=1) == 0
 logfile.write(f"{tag()} Removed {np.sum(~filter_biallelic)} non-biallelic sites\n")
-filter_nonmissing = counts.sum(axis=1) == 2 * samples.size
+filter_nonmissing = counts.sum(axis=1) == ploidy * samples.size
 logfile.write(f"{tag()} Removed {np.sum(~filter_nonmissing)} sites with missing data\n")
 filter_accessible = ~bitmask[positions - 1]
 logfile.write(f"{tag()} Removed {np.sum(~filter_accessible)} sites occuring in masked intervals\n")
@@ -343,6 +339,11 @@ all_positions = positions.copy()
 genotypes, positions, polarised = genotypes[retain], positions[retain], polarised[retain]
 variant_id, variant_chrom = variant_id[retain], variant_chrom[retain]
 calldata, ref_allele, alt_allele = calldata[retain], ref_allele[retain], alt_allele[retain]
+
+# NOTE: SINGER's VCF reader will treat "." as "0". Hence we have to handle
+# missingness explicitly to avoid getting wonky results.
+for i in range(ploidy):
+    assert calldata[..., i].min() == 0 and calldata[..., i].max() == 1
 
 
 # find inaccessible intervals greater than a certain size, and use these
@@ -643,6 +644,7 @@ for i in np.flatnonzero(filter_chunks):
         "polar_map": str(snakemake.output.polarisation),
         "seed": int(seeds[i, 0]),
         "output": str(chunk_path),
+        "ploidy": int(ploidy),
     }
     polegon_params = {
         "Ne": float(Ne),
@@ -666,7 +668,6 @@ for i in np.flatnonzero(filter_chunks):
 
 # if unpolarised, randomly flip reference and alternate
 if snakemake.params.random_polarisation:
-    assert calldata.min() == 0 and calldata.max() == 1
     flip_alleles = np.full(polarised.size, False)
     flip_alleles[~polarised] = rng.binomial(1, 0.5, size=np.sum(~polarised))
     logfile.write(
@@ -707,4 +708,5 @@ write_minimal_vcf(
     open(snakemake.output.vcf, "w"),
     samples, variant_chrom, positions, variant_id,
     ref_allele, alt_allele, calldata,
+    ploidy=ploidy,
 )
