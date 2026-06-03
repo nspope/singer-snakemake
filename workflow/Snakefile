@@ -14,12 +14,13 @@ import matplotlib.pyplot as plt
 import yaml
 import pickle
 import subprocess
+from functools import lru_cache
 from datetime import datetime
 
 from scripts.utils import hash_binary
 from scripts.utils import git_version
 
-
+@lru_cache(maxsize=None)
 def version_strings(pipeline: str, singer: str, polegon: str) -> dict:
     git_dir = os.path.join(workflow.basedir, os.path.pardir, ".git")
     if version_string := git_version(git_dir): pipeline = version_string
@@ -95,7 +96,6 @@ POLEGON_BINARY = os.path.join(
    "polegon-0.1.3-alpha-linux-x86_64", "polegon",
 )
 POLEGON_BINARY = config.get("polegon-binary", POLEGON_BINARY)
-VERSION_STRINGS = version_strings(VERSION, SINGER_BINARY, POLEGON_BINARY)
 
 CHROMOSOMES = config.get("chromosomes", None)
 if CHROMOSOMES is None:
@@ -117,10 +117,10 @@ STATS_PATH = os.path.join(OUTPUT_DIR, "{chrom}", "stats")
 # ------ rules ------ #
 
 onsuccess: 
-    top_level_info(INFOS_PATH, config, VERSION_STRINGS)
+    top_level_info(INFOS_PATH, config, version_strings(VERSION, SINGER_BINARY, POLEGON_BINARY))
 
 onerror: 
-    top_level_info(INFOS_PATH, config, VERSION_STRINGS)
+    top_level_info(INFOS_PATH, config, version_strings(VERSION, SINGER_BINARY, POLEGON_BINARY))
 
 
 rule all:
@@ -306,7 +306,7 @@ rule merge_chunks:
     params:
         min_branch_length = MIN_BRANCH_LENGTH,
         stratify = STRATIFY_BY,
-        version = VERSION_STRINGS,
+        version = lambda w: version_strings(VERSION, SINGER_BINARY, POLEGON_BINARY),
         # for debugging:
         repolarise = config.get("repolarise-ancestral-state", True),
         delete_genealogical_gaps = config.get("delete-genealogical-gaps", True),
