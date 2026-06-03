@@ -1,4 +1,4 @@
-24-May-2026
+2-Jun-2026
 -----------
 
 Added a modified version of SINGER.  These (relatively minor) changes are based
@@ -16,3 +16,9 @@ Changes relative to main:
     with other parts of the software, where position is a floating-point. The rationale
     behind allowing fractional positions is that multiallelic sites may be modelled
     (as distinct biallelic sites) without colliding with adjacent bases.
+
+  - A bug preventing use of recombination/mutation rate maps was fixed. However, we
+    aren't using these for the tree inference step, as more testing is needed to
+    guide best practices. The mutation rates still aren't use in rescaling: this would
+    be statistically more correct, but would change the output relative to old versions
+    even with a flat ratemap because of MCMC non-determinism.
