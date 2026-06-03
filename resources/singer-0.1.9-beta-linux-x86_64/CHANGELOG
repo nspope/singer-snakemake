@@ -1,0 +1,24 @@
+2-Jun-2026
+-----------
+
+Added a modified version of SINGER.  These (relatively minor) changes are based
+on commit f88d6873796 of the main SINGER repository. A fork which contains the
+modified source code is at: https://github.com/nspope/SINGER/tree/singer-snakemake-custom
+
+Changes relative to main:
+
+  - Per-site polarisation probabilities: the Polar_map struct maintains a dict
+    mapping (double) position onto (double) polarisation probability. The mapping
+    is passed via a text file to "-polar_map". The default value passed via the
+    "-polar" flag is used whenever there is no position-value mapping.
+
+  - The VCF reader now uses (double) instead of (int) for position. This is consistent
+    with other parts of the software, where position is a floating-point. The rationale
+    behind allowing fractional positions is that multiallelic sites may be modelled
+    (as distinct biallelic sites) without colliding with adjacent bases.
+
+  - A bug preventing use of recombination/mutation rate maps was fixed. However, we
+    aren't using these for the tree inference step, as more testing is needed to
+    guide best practices. The mutation rates still aren't use in rescaling: this would
+    be statistically more correct, but would change the output relative to old versions
+    even with a flat ratemap because of MCMC non-determinism.

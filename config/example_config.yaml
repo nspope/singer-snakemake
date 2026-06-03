@@ -1,5 +1,5 @@
 # --- example_config.yaml ---
-input-dir: "example" # directory with input files per chromosome, see README
+input-dir: "example/diploid" # directory with input files per chromosome, see README
 output-dir: "results" # directory where to place output
 chromosomes: null # a list of chromosomes to use (e.g. "chr1"), if `null` use all `vcf.gz` in `input-dir`
 mutation-rate: 1.0e-8 # per base per generation mutation rate
