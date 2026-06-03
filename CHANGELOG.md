@@ -1,6 +1,7 @@
 # [0.1.2]
 
 - Use ancestral states if provided as fasta; sites with ambiguous ancestral states are treated as unpolarised
+- Drop diploidization for haploid data, as SINGER v0.1.9 can parse haploid VCFs
 - Include a custom version of SINGER binary that allows per-site polarisation and fixes some bugs
 - Add `singer-skip-failures` flag that will treat chunks where MCMC fails as missing and still produce output
 - Use per-sample masks if provdied; these are always hard-masked leaving trees with varying numbers of tips
