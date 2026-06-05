@@ -10,8 +10,10 @@
 - Switch from hardcoded binary versions to checksums in provenance
 
 TODO: 
-  * document per-sample-masks paircoal-reweight and ancestral fasta in README
+  * document per-sample-masks, paircoal-reweight, and ancestral fasta in README
   * expose hard-masking
+  * recombinations/mismapped mutation tracks as diagnostics
+  * switch to pixi for environment management, move utils into a python package
 
 # 3-Mar-26 [0.1.1]
 
