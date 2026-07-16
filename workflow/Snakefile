@@ -230,6 +230,7 @@ rule run_singer:
         chunks_check = rules.chunk_chromosomes.output.chunks_check, # not used, mark dependency,
         params = os.path.join(CHUNK_PATH, "{id}.yaml"),
     output:  
+        singer_check = touch(os.path.join(CHUNK_PATH, "{id}.singer.done")),
         # TODO: mark temp
         recombs = expand(
             os.path.join(CHUNK_PATH, "{id}_recombs_{rep}.txt"),
@@ -262,6 +263,7 @@ rule run_polegon:
     Run POLEGON to date each chunk while accounting for masked sequence.
     """
     input:
+        singer_check = os.path.join(CHUNK_PATH, "{id}.singer.done"),
         params = os.path.join(CHUNK_PATH, "{id}.yaml"),
         branches = os.path.join(CHUNK_PATH, "{id}_branches_{rep}.txt"),
         nodes = os.path.join(CHUNK_PATH, "{id}_nodes_{rep}.txt"),
