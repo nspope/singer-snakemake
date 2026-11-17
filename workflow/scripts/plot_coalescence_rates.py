@@ -24,9 +24,18 @@ def tag():
     return f"[singer-snakemake::{snakemake.rule}::{str(datetime.now())}]"
 
 
+def step(ax, edges, val, **kwargs):
+    """
+    Draw `val[i]` over the window `[edges[i], edges[i + 1])`. Repeating the last
+    value is needed so that `where="post"` draws the final window.
+    """
+    ax.step(edges, np.append(val, val[-1]), where="post", **kwargs)
+
+
 # --- implm --- #
 
-num_intervals = snakemake.params.time_grid[2]  # TODO clean this up
+log_min, log_max, num_intervals = snakemake.params.time_grid
+edges = np.logspace(log_min, log_max, num_intervals + 1)  # as in coalescence_rates.py
 num_mcmc = snakemake.params.mcmc_samples
 num_burnin = snakemake.params.mcmc_burnin
 
@@ -38,6 +47,7 @@ if snakemake.params.stratify is not None:
     for what in ('rates', 'pdf'):
         inp = pickle.load(open(snakemake.input.crossrate[0], "rb"))
         names, breaks = inp['names'], inp['breaks']
+        assert np.allclose(breaks, edges[:-1]), "Time grid does not match coalescence rates"
         vals = np.stack([
             pickle.load(open(f, "rb"))[what] for f 
             in snakemake.input.crossrate[num_burnin:]
@@ -54,11 +64,11 @@ if snakemake.params.stratify is not None:
             for j, p in enumerate(names):
                 for k, q in enumerate(names):
                     if j <= k:
-                        axs[j, k].step(breaks[j, k], val[j, k], where="post", **reps_kwargs)
+                        step(axs[j, k], edges, val[j, k], **reps_kwargs)
         for j, p in enumerate(names):
             for k, q in enumerate(names):
                 if j <= k:
-                    axs[j, k].step(breaks[j, k], mean[j, k], where="post", **mean_kwargs)
+                    step(axs[j, k], edges, mean[j, k], **mean_kwargs)
                     axs[j, k].set_xscale("log")
                     if what == "rates": axs[j, k].set_yscale("log")
                     if j == 0:
@@ -84,14 +94,15 @@ if snakemake.params.stratify is not None:
 # pair coalescence rates with all samples
 for what in ("pdf", "rates"):
     breaks = pickle.load(open(snakemake.input.coalrate[0], "rb"))["breaks"]
+    assert np.allclose(breaks, edges[:-1]), "Time grid does not match coalescence rates"
     vals = np.stack([
         pickle.load(open(f, "rb"))[what] for f 
         in snakemake.input.coalrate[num_burnin:]
     ])
     mean = vals.mean(axis=0)
     fig, axs = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    for val in vals: axs.step(breaks, val, where="post", **reps_kwargs)
-    axs.step(breaks, mean, where="post", **mean_kwargs)
+    for val in vals: step(axs, edges, val, **reps_kwargs)
+    step(axs, edges, mean, **mean_kwargs)
     axs.set_xlabel("Generations in past")
     axs.set_xscale("log")
     if what == "rates": 

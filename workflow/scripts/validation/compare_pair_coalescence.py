@@ -10,6 +10,15 @@ import matplotlib.pyplot as plt
 
 matplotlib.rcParams["figure.dpi"] = 300
 
+
+def step(ax, edges, val, **kwargs):
+    """
+    Draw `val[i]` over the window `[edges[i], edges[i + 1])`. Repeating the last
+    value is needed so that `where="post"` draws the final window.
+    """
+    ax.step(edges, np.append(val, val[-1]), where="post", **kwargs)
+
+
 time_grid = snakemake.params.time_grid
 reference_density = np.load(next(iter(snakemake.input.infr_pair_density)))
 num_replicates = len(snakemake.input.infr_pair_density)
@@ -52,8 +61,8 @@ population_pairs = itertools.product(range(rows), range(cols))
 for (i, j) in population_pairs:
     if i <= j:
         label = f"({i}, {j})"
-        axs[i, j].step(time_grid[:-2], true_pair_density[i, j][1:-1], color="black", label="true")
-        axs[i, j].step(time_grid[:-2], infr_pair_density[i, j][1:-1], color="firebrick", label="estimated", alpha=0.8)
+        step(axs[i, j], time_grid[:-1], true_pair_density[i, j][1:-1], color="black", label="true")
+        step(axs[i, j], time_grid[:-1], infr_pair_density[i, j][1:-1], color="firebrick", label="estimated", alpha=0.8)
         axs[i, j].set_xscale("log")
         if rows > 1:
             axs[i, j].text(0.05, 0.95, label, ha="left", va="top", transform=axs[i, j].transAxes, size=10)
@@ -87,8 +96,8 @@ population_pairs = itertools.product(range(rows), range(cols))
 for (i, j) in population_pairs:
     if i <= j:
         label = f"({i}, {j})"
-        axs[i, j].step(time_grid[:-2], true_pair_rates[i, j][1:-1], color="black", label="true")
-        axs[i, j].step(time_grid[:-2], infr_pair_rates[i, j][1:-1], color="firebrick", label="estimated", alpha=0.8)
+        step(axs[i, j], time_grid[:-1], true_pair_rates[i, j][1:-1], color="black", label="true")
+        step(axs[i, j], time_grid[:-1], infr_pair_rates[i, j][1:-1], color="firebrick", label="estimated", alpha=0.8)
         axs[i, j].set_xscale("log")
         if snakemake.params.log_coalescence_rates: 
             axs[i, j].set_yscale("log")
