@@ -54,11 +54,11 @@ if snakemake.params.stratify is not None:
             for j, p in enumerate(names):
                 for k, q in enumerate(names):
                     if j <= k:
-                        axs[j, k].step(breaks[j, k], val[j, k], **reps_kwargs)
+                        axs[j, k].step(breaks[j, k], val[j, k], where="post", **reps_kwargs)
         for j, p in enumerate(names):
             for k, q in enumerate(names):
                 if j <= k:
-                    axs[j, k].step(breaks[j, k], mean[j, k], **mean_kwargs)
+                    axs[j, k].step(breaks[j, k], mean[j, k], where="post", **mean_kwargs)
                     axs[j, k].set_xscale("log")
                     if what == "rates": axs[j, k].set_yscale("log")
                     if j == 0:
@@ -90,8 +90,8 @@ for what in ("pdf", "rates"):
     ])
     mean = vals.mean(axis=0)
     fig, axs = plt.subplots(1, 1, figsize=(5, 4), constrained_layout=True)
-    for val in vals: axs.step(breaks, val, **reps_kwargs)
-    axs.step(breaks, mean, **mean_kwargs)
+    for val in vals: axs.step(breaks, val, where="post", **reps_kwargs)
+    axs.step(breaks, mean, where="post", **mean_kwargs)
     axs.set_xlabel("Generations in past")
     axs.set_xscale("log")
     if what == "rates": 
