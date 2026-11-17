@@ -542,4 +542,10 @@ def time_windowed_relatedness(
 
     return relatedness.transpose()
 
-    
+def step(ax, x, y, **kwargs):
+    """
+    Draws a step plot with `y[i]` between `{x[i],x[i+1]}` (using `where="post"`).
+    The last value in y is repeated to draw the last window.
+    Used in plot_coalescence_rates.py and compare_pair_coalescence.py.
+    """
+    ax.step(x, np.append(y, y[-1]), where="post", **kwargs)    
