@@ -64,7 +64,7 @@ logfile.write(
 output = {
     "rates" : rates[1:-1],
     "pdf" : pdf[1:-1],
-    "breaks" : time_windows[1:-2],
+    "breaks" : time_windows[1:-1],
 }
 pickle.dump(output, open(snakemake.output.coalrate, "wb"))
 
@@ -84,7 +84,7 @@ if snakemake.params.stratify is not None:
     sample_sets = [sample_sets[x] for x in names]
     cross_rates = np.full((names.size, names.size, num_intervals), np.nan)
     cross_pdf = np.full((names.size, names.size, num_intervals), np.nan)
-    cross_breaks = np.full((names.size, names.size, num_intervals), np.nan)
+    cross_breaks = np.full((names.size, names.size, num_intervals+1), np.nan)
     for i in range(names.size):
         indexes = [(i, j) for j in range(names.size)]
         pdf = ts.pair_coalescence_counts(
@@ -106,7 +106,7 @@ if snakemake.params.stratify is not None:
         rates[survival[:, :-1] <= tail_cutoff] = np.nan
         cross_rates[i] = rates[:, 1:-1]
         cross_pdf[i] = pdf[:, 1:-1]
-        cross_breaks[i] = np.tile(time_windows[1:-2], (names.size, 1))
+        cross_breaks[i] = np.tile(time_windows[1:-1], (names.size, 1))
     output = {
         "rates" : cross_rates, 
         "pdf" : cross_pdf,
