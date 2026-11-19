@@ -606,11 +606,6 @@ pickle.dump(omitted_positions, open(snakemake.output.omitted, "wb"))
 # ratemap.get_rate(variant_positions) is accurate.
 
 
-# FIXME: there is a bug in SINGER where fine-scale rate maps are never used
-# and the mean rate is used instead. When this is fixed, explore using
-# fine-scale rate maps (these may be problematic with zero rates). In the
-# meantime, we explicitly use mean rates.
-
 # dump SINGER parameters for each chunk
 chunks_dir = snakemake.params.chunks_dir
 os.makedirs(f"{chunks_dir}", exist_ok=True)
@@ -621,6 +616,7 @@ for i in np.flatnonzero(filter_chunks):
     polar = 0.99 if snakemake.params.polarised else 0.5
     id = f"{i:>06}"
     # SINGER truncates coordinates of SNPs, so adjust maps accordingly
+    # TODO is this still true in patched binary? I think it might not be
     mut = adjusted_mu.slice(start, end, trim=True)
     rec = hapmap.slice(start, end, trim=True)
     chunk_path = os.path.join(chunks_dir, id)
@@ -630,11 +626,6 @@ for i in np.flatnonzero(filter_chunks):
         "thin": int(snakemake.params.singer_mcmc_thin), 
         "n": int(snakemake.params.singer_mcmc_samples),
         "Ne": float(Ne),
-        # "m": str(0.0),    # NB: SINGER expects these arguments and toggles
-        # "r": float(0.0),  # off map usage if at least one is positive
-        # "mut_map": str(mutation_map_path),
-        # "recomb_map": str(recombination_map_path),
-        # (see comment above)
         "m": float(mut.mean_rate),
         "r": float(rec.mean_rate),
         "input": str(vcf_prefix), 
@@ -655,6 +646,12 @@ for i in np.flatnonzero(filter_chunks):
         "max_step": float(snakemake.params.polegon_max_step),
         "seed": int(seeds[i, 1]),
     }
+    if snakemake.params.use_finescale_recombination:
+        singer_params.pop("r", None)
+        singer_params["recomb_map"] = str(recombination_map_path)
+    if snakemake.params.use_finescale_mutation:
+        singer_params.pop("m", None)
+        singer_params["mut_map"] = str(mutation_map_path)
     chunk_params = {"singer": singer_params, "polegon": polegon_params}
     yaml.dump(
         chunk_params, 

@@ -37,6 +37,8 @@ model-masked-sequence: true # build fine-scale mu rate map with zero rate in mas
 random-polarisation: true # randomly flip ref/alt for unpolarised sites at initialisation
 remove-unpolarised: false # if `polarised: true`, drop sites that could not be polarised instead of carrying them through
 impute-sample-masks: true # when per-sample masks are present, fill masked genotypes via Bernoulli draws from observed allele frequency
+use-finescale-recombination: false # use the fine-scale recombination rates rather than mean rate per chunk
+use-finescale-mutation: false # use the fine-scale mutation rates rather than mean rate per chunk (FIXME: this should allow an input ratemap, currently just reflects missing data)
 use-polegon: true # run POLEGON for dating; if false, retain SINGER's branch lengths
 use-mutational-span: true # convert edge spans to mutational units so POLEGON's mean-rate rescaling yields correct dates
 drop-omitted: true # drop user-specified omitted positions from POLEGON dating (kept in topology)

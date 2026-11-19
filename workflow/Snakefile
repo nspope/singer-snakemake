@@ -217,6 +217,8 @@ checkpoint chunk_chromosomes:
         random_polarisation = config.get("random-polarisation", True),
         remove_unpolarised = config.get("remove-unpolarised", False),
         impute_sample_masks = config.get("impute-sample-masks", True),
+        use_finescale_recombination = config.get("use-finescale-recombination", False),
+        use_finescale_mutation = config.get("use-finescale-mutation", False), # FIXME: actual support requires an input ratemap
     script:
         "scripts/chunk_chromosomes.py"
 
