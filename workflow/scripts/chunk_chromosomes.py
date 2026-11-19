@@ -615,10 +615,11 @@ for i in np.flatnonzero(filter_chunks):
     start, end = windows[i] + 1, windows[i + 1] + 1  # one-based coordinates
     polar = 0.99 if snakemake.params.polarised else 0.5
     id = f"{i:>06}"
-    # SINGER truncates coordinates of SNPs, so adjust maps accordingly
-    # TODO is this still true in patched binary? I think it might not be
-    mut = adjusted_mu.slice(start, end, trim=True)
-    rec = hapmap.slice(start, end, trim=True)
+    # NB: base SINGER truncates coordinates of SNPs and needs to adjust maps accordingly 
+    # (set trim=True below). However the patched binary in this repo uses the
+    # native coordinate system, and so we set out-of-chunk rates to zero.
+    mut = adjusted_mu.slice(start, end, trim=False)
+    rec = hapmap.slice(start, end, trim=False)
     chunk_path = os.path.join(chunks_dir, id)
     mutation_map_path = f"{chunk_path}.mut"
     recombination_map_path = f"{chunk_path}.rec"

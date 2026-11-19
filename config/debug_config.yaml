@@ -50,5 +50,5 @@ delete-masked-intervals: false # remove all masked intervals from the merged tre
 delete-imputed-intervals: true # remove per-sample masked ancestry from the merged tree sequence
 record-chunk-provenance: true # record per-chunk SINGER/POLEGON parameters in the tree sequence provenance table
 coalrate-tail-cutoff: 0.05 # mask coalescence rate estimates for time bins with survival proportion below this threshold
-#singer-binary: "/path/to/singer" # override the bundled SINGER binary
+#singer-binary: "/path/to/singer" # override the bundled SINGER binary (for debugging only, things will silently break without the bundled binary)
 #polegon-binary: "/path/to/polegon" # override the bundled POLEGON binary
