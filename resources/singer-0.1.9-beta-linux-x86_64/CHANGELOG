@@ -22,3 +22,11 @@ Changes relative to main:
     guide best practices. The mutation rates still aren't use in rescaling: this would
     be statistically more correct, but would change the output relative to old versions
     even with a flat ratemap because of MCMC non-determinism.
+
+  - Rate map files (-recomb_map / -mut_map) are now read in the same coordinate
+    system as -start/-end (1-based VCF, absolute). The reader clips the map to
+    [start, end) and shifts it to chunk-local coordinates, so files written in
+    chunk-local coordinates (as stock SINGER expects) will be rejected. The
+    file must be contiguous (no gaps/overlaps) and cover [start, end). Exactly
+    one of -r/-recomb_map and one of -m/-mut_map must be given.
+

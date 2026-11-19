@@ -4,10 +4,11 @@
 - Drop diploidization for haploid data, as SINGER v0.1.9 can parse haploid VCFs
 - Include a custom version of SINGER binary that allows per-site polarisation and fixes some bugs
 - Add `singer-skip-failures` flag that will treat chunks where MCMC fails as missing and still produce output
-- Use per-sample masks if provdied; these are always hard-masked leaving trees with varying numbers of tips
+- Use per-sample masks if provided; these are always hard-masked leaving trees with varying numbers of tips
 - All outputs in one-based coords; previously ratemaps were zero-based while tree sequences were one-based
 - Option to average coalescence cdf/rates over recombination map rather than bp, which can reduce variance
 - Switch from hardcoded binary versions to checksums in provenance
+- Option to use fine-scale rate maps for SINGER (off by default, hidden in the debug config)
 
 TODO: 
   * document per-sample-masks, paircoal-reweight, and ancestral fasta in README
